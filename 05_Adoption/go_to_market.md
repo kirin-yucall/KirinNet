@@ -120,10 +120,10 @@ unlocks the full range of the port space for seamless web access.
      Reddit r/chromeextensions.
 
 2. **Publish Libraries on Package Registries**
-   - **Python:** Publish `aura-dns` on PyPI.
-   - **JavaScript:** Publish `aura-dns` on npm.
-   - **Go:** Publish `github.com/kirindns/go-kirindns`.
-   - **Rust:** Publish `aura-dns` on crates.io.
+   - **Python:** Publish `kirin-dns` on PyPI.
+   - **JavaScript:** Publish `kirin-dns` on npm.
+   - **Go:** Publish `github.com/kirin-yucall/kirin-dns-go`.
+   - **Rust:** Publish `kirin-dns` on crates.io.
 
 3. **Submit the Internet-Draft to IETF**
    - Submit `spec_v1.md` as an Internet-Draft.

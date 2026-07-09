@@ -214,7 +214,7 @@ browsing — no user action, no developer action, no breaking changes."*
 
 Create a dedicated GitHub Discussions space for KirinDNS:
 
-**Repository:** `github.com/kirindns/protocol` (or similar)
+**Repository:** `github.com/kirin-yucall/KirinNet` (or similar)
 
 **Discussion categories:**
 - **💡 Ideas** — Propose new features, protocol extensions, or use cases.

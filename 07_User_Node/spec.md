@@ -687,7 +687,7 @@ To make the User Node discoverable, the user configures a DNS TXT record
 on their domain:
 
 ```
-aura.alice.kirinnet.org.  300  IN  TXT  "{\"http\": 8080, \"id\": \"user-abc123def456\", \"nickname\": \"Alice\"}"
+alice.kirinnet.org.  300  IN  TXT  "{\"http\": 8080, \"id\": \"user-abc123def456\", \"nickname\": \"Alice\"}"
 ```
 
 Or more readably, the TXT record contains:
@@ -725,7 +725,7 @@ Or more readably, the TXT record contains:
 5. **Verify resolution** using the KirinDNS client library:
 
    ```bash
-   node -e "const {resolve_aura_dns} = require('aura-dns'); resolve_aura_dns('alice.kirinnet.org').then(r => console.log(JSON.stringify(r)))"
+   node -e "const {resolve_kirin_dns} = require('kirin-dns'); resolve_kirin_dns('alice.kirinnet.org').then(r => console.log(JSON.stringify(r)))"
    # => {"http": 8080}
    ```
 

@@ -23,7 +23,7 @@
  *   See 01_Standard/spec_v1.md Section 4.3 for the security requirements.
  *
  * Example usage:
- *   const { resolve_kirin_dns } = require('./aura_dns');
+ *   const { resolve_kirin_dns } = require('./kirin_dns');
  *
  *   (async () => {
  *     const ports = await resolve_kirin_dns('example.com');

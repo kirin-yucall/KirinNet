@@ -86,14 +86,14 @@ const ports = await resolve_kirin_dns('example.com');
 ### Go
 
 ```bash
-go get github.com/kirinnet/kirin-dns-go
+go get github.com/kirin-yucall/kirin-dns-go
 ```
 
 ```go
-import "github.com/kirinnet/kirin-dns-go"
+import "github.com/kirin-yucall/kirin-dns-go"
 
 ports, err := kirindns.Resolve("example.com")
-// Returns: map[string]int{"http": 8080, "https": 8443}
+// Returns: ResolvedPorts{HTTP: 8080, HTTPS: 8443, WS: 80, WSS: 443}
 ```
 
 ### Rust
@@ -106,7 +106,7 @@ cargo add kirin-dns
 use kirin_dns::KirinDns;
 
 let ports = KirinDns::resolve("example.com").await?;
-// Returns: HashMap with {"http": 8080, "https": 8443}
+// ports.http() == 8080, ports.https() == 8443
 ```
 
 ### Browser Extension
@@ -239,7 +239,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 ---
 
 > **KirinDNS** — Port-Aware DNS Resolution for the Modern Web
-> [![CI](https://github.com/kirindns/kirindns/actions/workflows/ci.yml/badge.svg)](https://github.com/kirindns/kirindns/actions/workflows/ci.yml)
+> [![CI](https://github.com/kirin-yucall/KirinNet/actions/workflows/ci.yml/badge.svg)](https://github.com/kirin-yucall/KirinNet/actions/workflows/ci.yml)
 > [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 > [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](02_Libraries/python/)
 > [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](02_Libraries/javascript/)
