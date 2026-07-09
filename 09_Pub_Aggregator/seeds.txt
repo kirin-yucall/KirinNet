@@ -1,0 +1,8 @@
+# KirinNet Public Aggregator — Seed Domains
+# One domain per line. Lines starting with # are comments.
+# The crawler resolves each domain via KirinDNS TXT, then fetches /aura/content
+#
+# Example domains (replace with real User Node domains):
+# alice.kirinnet.org
+# bob.kirinnet.org
+# creator1.home-server.net

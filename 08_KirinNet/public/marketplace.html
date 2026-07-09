@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KirinNet · 市集</title>
+<style>
+  :root {
+    --bg: #f5f5f5; --card: #fff; --text: #222; --muted: #888;
+    --accent: #e8553d; --accent2: #2563eb; --border: #e0e0e0;
+    --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,0.08); --gap: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .container { max-width: 960px; margin: 0 auto; padding: var(--gap); }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+
+  /* Search */
+  .search-bar { display: flex; gap: 10px; margin-bottom: 16px; }
+  .search-bar input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; background: var(--card); }
+  .search-bar select, .search-bar button { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; background: var(--card); cursor: pointer; }
+  .search-bar button { background: var(--accent2); color: #fff; border-color: var(--accent2); font-weight: 600; }
+
+  /* Category pills */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .pill { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); font-size: 13px; cursor: pointer; background: var(--card); transition: .2s; }
+  .pill.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+
+  /* Product grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--gap); }
+  .product-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; cursor: pointer; transition: transform .15s; }
+  .product-card:hover { transform: translateY(-2px); }
+  .product-card .card-img { width: 100%; height: 180px; background: #eee; object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .product-card .card-body { padding: 12px; }
+  .product-card .card-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .product-card .card-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .product-card .card-price { font-size: 18px; font-weight: 700; color: var(--accent); }
+  .product-card .card-domain { font-size: 11px; color: var(--accent2); margin-top: 2px; }
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .badge-xrp { background: #e8f4fd; color: #2563eb; }
+  .badge-alipay { background: #e8f5e9; color: #388e3c; }
+
+  /* Detail modal */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; overflow-y: auto; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--card); border-radius: var(--radius); width: 100%; max-width: 680px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
+  .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 24px; cursor: pointer; }
+  .modal h2 { font-size: 20px; margin-bottom: 12px; }
+  .modal .price-block { font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+  .modal .detail-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; font-size: 13px; color: var(--muted); }
+  .modal .detail-desc { margin-bottom: 20px; line-height: 1.7; white-space: pre-wrap; }
+  .modal .variant-list { margin-bottom: 20px; }
+  .modal .variant-item { display: inline-block; padding: 6px 12px; margin: 4px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .modal .variant-item.selected { border-color: var(--accent2); background: #eff6ff; }
+  .modal .variant-item.sold-out { opacity: .4; text-decoration: line-through; cursor: not-allowed; }
+  .modal .payment-info { background: #f9fafb; padding: 14px; border-radius: 8px; margin-bottom: 16px; }
+  .modal .payment-info h4 { font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+  .nav-links { display: flex; gap: 16px; margin-bottom: 16px; }
+  .nav-links a { color: var(--accent2); text-decoration: none; font-size: 13px; font-weight: 600; }
+  .nav-links a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav-links">
+    <a href="/index.html">🏠 首页</a>
+    <a href="/swipe.html">📱 刷一刷</a>
+    <a href="/marketplace.html" style="font-weight:700">🛒 市集</a>
+    <a href="/ingestion.html">📊 收录</a>
+  </div>
+  <h1>🛒 KirinNet 市集</h1>
+  <p class="sub">去中心化商品交易 · XRP + 支付宝</p>
+
+  <!-- Search -->
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜索商品..." onkeydown="if(event.key==='Enter')search()">
+    <select id="sortSelect" onchange="search()">
+      <option value="newest">最新</option>
+      <option value="price_asc">价格 ↑</option>
+      <option value="price_desc">价格 ↓</option>
+      <option value="popular">最热</option>
+    </select>
+    <button onclick="search()">🔍 搜索</button>
+  </div>
+
+  <!-- Category filters -->
+  <div class="filters" id="filters">
+    <span class="pill active" data-cat="" onclick="filterCat('')">全部</span>
+    <span class="pill" data-cat="clothing" onclick="filterCat('clothing')">👕 服装</span>
+    <span class="pill" data-cat="electronics" onclick="filterCat('electronics')">💻 数码</span>
+    <span class="pill" data-cat="books" onclick="filterCat('books')">📚 图书</span>
+    <span class="pill" data-cat="home" onclick="filterCat('home')">🏠 家居</span>
+    <span class="pill" data-cat="beauty" onclick="filterCat('beauty')">💄 美妆</span>
+    <span class="pill" data-cat="sports" onclick="filterCat('sports')">⚽ 运动</span>
+    <span class="pill" data-cat="other" onclick="filterCat('other')">📦 其他</span>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid" id="productGrid"></div>
+  <p id="loadMsg" style="text-align:center;padding:20px;color:var(--muted)">加载中...</p>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+const API = '/api/v1/marketplace';
+let currentCat = '';
+let currentPage = 1;
+
+async function search(reset = true) {
+  if (reset) currentPage = 1;
+  const q = document.getElementById('searchInput').value.trim();
+  const sort = document.getElementById('sortSelect').value;
+  const params = new URLSearchParams({ page: currentPage, limit: 24, sort });
+  if (currentCat) params.set('category', currentCat);
+  if (q) params.set('search', q);
+
+  document.getElementById('loadMsg').textContent = '加载中...';
+  try {
+    const res = await fetch(`${API}?${params}`);
+    const data = await res.json();
+    const grid = document.getElementById('productGrid');
+
+    if (reset) grid.innerHTML = '';
+
+    if (!data.products || data.products.length === 0) {
+      if (reset) grid.innerHTML = '<p style="text-align:center;grid-column:1/-1;padding:40px;color:var(--muted)">暂无商品</p>';
+      document.getElementById('loadMsg').textContent = '';
+      return;
+    }
+
+    grid.innerHTML += data.products.map(p => {
+      const price = p.currency === 'XRP' ? `XRP ${p.base_price}` : `¥${p.base_price}`;
+      const payBadges = (p.payment_methods || []).map(m =>
+        m === 'xrp' ? '<span class="badge badge-xrp">🪙XRP</span>' : '<span class="badge badge-alipay">💙支付宝</span>'
+      ).join(' ');
+      return `
+        <div class="product-card" onclick="openDetail(${p.id})">
+          <div class="card-img">📦</div>
+          <div class="card-body">
+            <div class="card-title">${p.title}</div>
+            <div class="card-meta">${p.condition === 'new' ? '✨全新' : '🔄二手'} · ${p.category}${p.location ? ' · ' + p.location : ''}</div>
+            <div class="card-price">${price}</div>
+            <div class="card-domain">${payBadges} ${p.source_domain}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('loadMsg').textContent =
+      data.products.length < 24 ? '— 已显示全部 —' : '滚动加载更多...';
+  } catch (err) {
+    document.getElementById('loadMsg').textContent = '加载失败: ' + err.message;
+  }
+}
+
+function filterCat(cat) {
+  currentCat = cat;
+  document.querySelectorAll('#filters .pill').forEach(p => p.classList.toggle('active', p.dataset.cat === cat));
+  search();
+}
+
+async function openDetail(id) {
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('modalContent').innerHTML = '<p style="text-align:center;padding:40px">加载中...</p>';
+  try {
+    const res = await fetch(`${API}/${id}`);
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error);
+
+    const price = p.currency === 'XRP' ? `XRP ${p.base_price}` : `¥${p.base_price}`;
+    const payInfo = (p.payment_methods || []).map(m => {
+      if (m === 'xrp') return `🪙 XRP 地址: <code>${p.xrp_address || '未设置'}</code>`;
+      if (m === 'alipay') return `💙 支付宝: ${p.alipay_qr || '未设置'}`;
+      return '';
+    }).filter(Boolean).join('<br>');
+
+    const variantHTML = p.variants && p.variants.length > 0 ? `
+      <div class="variant-list">
+        <h4 style="margin-bottom:8px;font-size:14px">可选规格</h4>
+        ${p.variants.map(v => {
+          const attrs = v.attributes || {};
+          const label = Object.values(attrs).join(' / ') || v.sku;
+          const modPrice = v.price_modifier !== 0 ? ` (${v.price_modifier >= 0 ? '+' : ''}${v.price_modifier})` : '';
+          const cls = v.status === 'sold_out' ? 'sold-out' : '';
+          return `<span class="variant-item ${cls}" title="SKU: ${v.sku} 库存: ${v.stock}">${label}${modPrice}</span>`;
+        }).join('')}
+      </div>
+    ` : '';
+
+    document.getElementById('modalContent').innerHTML = `
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <h2>${p.title}</h2>
+      <div class="price-block">${price}</div>
+      <div class="detail-meta">
+        <span>${p.condition === 'new' ? '✨ 全新' : '🔄 二手'}</span>
+        <span>📂 ${p.category}</span>
+        <span>📍 ${p.location || '未知'}</span>
+        <span>👁 ${p.view_count} 次浏览</span>
+        <span>🏪 ${p.source_domain}</span>
+      </div>
+      <div class="payment-info">
+        <h4>收款方式</h4>
+        ${payInfo || '未设置收款方式'}
+      </div>
+      ${variantHTML}
+      <div class="detail-desc">${p.description || '暂无描述'}</div>
+      <div style="font-size:12px;color:var(--muted)">
+        ${(p.tags || []).map(t => '#' + t).join(' ')}
+      </div>
+    `;
+  } catch (err) {
+    document.getElementById('modalContent').innerHTML = `<p style="color:red">错误: ${err.message}</p>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+// infinite scroll
+window.addEventListener('scroll', () => {
+  if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 400) {
+    currentPage++;
+    search(false);
+  }
+});
+
+// init
+search();
+</script>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KirinNet — 信息搜集展示平台</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #f59e0b;
+      --accent-hover: #d97706;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --green: #10b981;
+      --blue: #60a5fa;
+      --red: #f87171;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 20px; color: var(--accent); }
+    header nav { display: flex; gap: 16px; }
+    header nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    header nav a:hover, header nav a.active { color: var(--accent); }
+
+    /* Search */
+    .search-bar {
+      display: flex;
+      gap: 8px;
+      padding: 16px 24px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .search-bar input {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .search-bar input:focus { outline: none; border-color: var(--accent); }
+    .search-bar button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .search-bar button:hover { background: var(--accent-hover); }
+
+    /* Section tabs */
+    .tabs {
+      display: flex;
+      gap: 0;
+      max-width: 400px;
+      margin: 0 auto 20px;
+      background: var(--card);
+      border-radius: 12px;
+      padding: 4px;
+      border: 1px solid var(--border);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      border: none;
+      background: none;
+    }
+    .tab.active { background: var(--accent); color: #000; font-weight: 600; }
+    .tab .count { font-size: 10px; opacity: 0.7; }
+
+    /* Grid */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
+
+    /* Post card (compact, like short posts) */
+    .post-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border 0.2s;
+    }
+    .post-card:hover { border-color: var(--accent); }
+    .post-card .post-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .post-card .post-header .domain {
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .post-card .post-body {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .post-card .post-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 10px;
+    }
+
+    /* Grid for articles and videos */
+    .content-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .content-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border 0.2s;
+    }
+    .content-card:hover { border-color: var(--accent); }
+    .content-card .thumb {
+      height: 160px;
+      background: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+    }
+    .content-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .content-card .card-body { padding: 14px; }
+    .content-card .card-body h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .content-card .card-body .meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .content-card .card-body .tags {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .content-card .card-body .tags span {
+      font-size: 10px;
+      background: rgba(245,158,11,0.12);
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    .empty {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-muted);
+    }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .badge.post { background: #1e3a5f; color: var(--blue); }
+    .badge.video { background: #3a1e1e; color: var(--red); }
+    .badge.article { background: #1e3a1e; color: var(--green); }
+
+    @media (max-width: 600px) {
+      .content-grid { grid-template-columns: 1fr; }
+      header { padding: 12px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KirinNet</h1>
+    <nav>
+      <a href="/" class="active">首页</a>
+      <a href="/swipe.html">滑动浏览</a>
+      <a href="/ingestion.html">收录记录</a>
+      <a href="/upload.html">发布</a>
+    </nav>
+  </header>
+
+  <!-- Search -->
+  <div class="search-bar">
+    <input type="text" id="q" placeholder="搜索 KirinNet..." onkeydown="if(event.key==='Enter')search()">
+    <button onclick="search()">搜索</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('post')">短贴</button>
+    <button class="tab" onclick="switchTab('article')">文章</button>
+    <button class="tab" onclick="switchTab('video')">视频</button>
+  </div>
+
+  <div class="container" id="content"></div>
+
+  <script>
+    const API = '/api/v1';
+    let currentTab = 'post';
+    let currentQuery = '';
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      loadContent();
+    }
+
+    function search() {
+      currentQuery = document.getElementById('q').value.trim();
+      loadContent();
+    }
+
+    async function loadContent() {
+      const container = document.getElementById('content');
+      container.innerHTML = '<div class="empty">加载中...</div>';
+
+      try {
+        const params = new URLSearchParams();
+        if (currentQuery) params.set('q', currentQuery);
+        params.set('category', currentTab);
+        params.set('limit', '30');
+
+        const url = currentQuery
+          ? `${API}/search?${params.toString()}`
+          : `${API}/search/trending?category=${currentTab}&limit=30`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+        const items = data.results || [];
+
+        if (items.length === 0) {
+          container.innerHTML = '<div class="empty">暂无内容</div>';
+          return;
+        }
+
+        if (currentTab === 'post') {
+          renderPosts(items, container);
+        } else {
+          renderGrid(items, container);
+        }
+      } catch (err) {
+        container.innerHTML = `<div class="empty">加载失败: ${err.message}</div>`;
+      }
+    }
+
+    function renderPosts(items, container) {
+      container.innerHTML = items.map(item => `
+        <div class="post-card" onclick="window.open('${item.direct_url || '#'}', '_blank')">
+          <div class="post-header">
+            <span class="badge post">短贴</span>
+            <span class="domain">@${esc(item.creator_domain)}</span>
+          </div>
+          <div class="post-body">${esc(item.description || item.title || '')}</div>
+          ${item.tags && item.tags.length ? `
+            <div style="margin-top:8px">${item.tags.map(t => `<span style="font-size:10px;color:var(--accent);background:rgba(245,158,11,0.1);padding:2px 8px;border-radius:4px;margin-right:4px;">#${esc(t)}</span>`).join('')}</div>
+          ` : ''}
+          <div class="post-footer">
+            <span>${item.view_count || 0} 浏览</span>
+            <span>${formatDate(item.created_at)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderGrid(items, container) {
+      const typeIcons = { video: '🎬', article: '📄' };
+      container.innerHTML = `<div class="content-grid">${items.map(item => `
+        <div class="content-card" onclick="window.open('${item.direct_url || '#'}', '_blank')">
+          <div class="thumb">
+            ${item.thumbnail_cid
+              ? `<img src="https://gateway.kirinnet.org/ipfs/${item.thumbnail_cid}" alt="" loading="lazy">`
+              : `<span>${typeIcons[item.category] || '📦'}</span>`
+            }
+          </div>
+          <div class="card-body">
+            <h3>${esc(item.title || item.description || 'Untitled')}</h3>
+            <div class="meta">
+              <span class="badge ${item.category}">${typeLabel(item.category)}</span>
+              @${esc(item.creator_domain)} · ${item.view_count || 0} 浏览 · ${formatDate(item.created_at)}
+            </div>
+            ${item.tags && item.tags.length ? `
+              <div class="tags">${item.tags.map(t => `<span>#${esc(t)}</span>`).join('')}</div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    function typeLabel(t) { return { post: '短贴', article: '文章', video: '视频' }[t] || t; }
+    function esc(s) {
+      if (!s) return '';
+      const div = document.createElement('div');
+      div.textContent = String(s);
+      return div.innerHTML;
+    }
+    function formatDate(d) {
+      if (!d) return '';
+      const dt = new Date(d);
+      const now = new Date();
+      const diff = now - dt;
+      if (diff < 3600000) return `${Math.floor(diff/60000)}分钟前`;
+      if (diff < 86400000) return `${Math.floor(diff/3600000)}小时前`;
+      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    }
+
+    loadContent();
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "KirinDNS Resolver",
+  "version": "1.0.0",
+  "description": "Resolves KirinDNS (ADRP) TXT records via DNS-over-HTTPS and automatically redirects requests to non-standard ports.",
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "storage",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "KirinDNS Resolver",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

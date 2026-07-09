@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  aggregator:
+    build: .
+    container_name: aggregator
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./seeds.txt:/app/seeds.txt:ro
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - CRAWL_INTERVAL=3600000  # 1 hour in ms
+      - SEED_FILE=/app/seeds.txt

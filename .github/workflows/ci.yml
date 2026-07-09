@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: 02_Libraries/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest dnspython
+
+      - name: Run pytest
+        working-directory: 02_Libraries/python
+        run: |
+          pytest tests/ -v --tb=short
+
+  javascript-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['18', '20', '22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: 02_Libraries/javascript
+        run: |
+          npm install
+
+      - name: Run jest
+        working-directory: 02_Libraries/javascript
+        run: |
+          npx jest --verbose
+
+  go-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Run Go tests
+        working-directory: 02_Libraries/go
+        run: |
+          go test -v ./...
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust tests
+        working-directory: 02_Libraries/rust
+        run: |
+          cargo test --verbose
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint Python (flake8)
+        working-directory: 02_Libraries/python
+        run: |
+          pip install flake8
+          flake8 . --max-line-length=120 --ignore=E501,W503
+
+      - name: Lint JavaScript (eslint)
+        working-directory: 02_Libraries/javascript
+        run: |
+          npm install --save-dev eslint
+          npx eslint . --no-eslintrc --env=node --env=es2022

@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My User Node</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 900px; margin: 0 auto; }
+    h1 { color: #58a6ff; margin-bottom: 10px; }
+    h2 { color: #58a6ff; margin: 20px 0 10px; border-bottom: 1px solid #21262d; padding-bottom: 5px; }
+    .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin: 10px 0; }
+    .profile-info { display: grid; grid-template-columns: 80px 1fr; gap: 16px; align-items: start; }
+    .avatar { width: 80px; height: 80px; border-radius: 50%; background: #21262d; display: flex;
+              align-items: center; justify-content: center; font-size: 32px; color: #58a6ff; }
+    .profile-details label { display: block; color: #8b949e; font-size: 12px; margin: 8px 0 2px; }
+    .profile-details input, .profile-details textarea {
+      width: 100%; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 6px; color: #c9d1d9; font-size: 14px; }
+    .profile-details textarea { min-height: 60px; resize: vertical; }
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin: 5px 5px 5px 0; }
+    .btn-primary { background: #238636; color: white; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-danger { background: #da3633; color: white; }
+    .btn-danger:hover { background: #f85149; }
+    .btn-secondary { background: #30363d; color: #c9d1d9; }
+    .btn-secondary:hover { background: #484f58; }
+    .content-item { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #21262d; align-items: start; }
+    .content-item:last-child { border-bottom: none; }
+    .content-thumb { width: 120px; height: 68px; background: #21262d; border-radius: 4px; display: flex;
+                     align-items: center; justify-content: center; color: #484f58; font-size: 11px; flex-shrink: 0; }
+    .content-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+    .content-info { flex: 1; }
+    .content-info h3 { font-size: 15px; color: #58a6ff; margin-bottom: 4px; }
+    .content-info p { font-size: 13px; color: #8b949e; }
+    .content-type { display: inline-block; padding: 2px 6px; background: #1f6feb; color: white;
+                    border-radius: 4px; font-size: 11px; margin-left: 8px; }
+    .upload-area { border: 2px dashed #30363d; border-radius: 8px; padding: 30px; text-align: center;
+                   cursor: pointer; transition: border-color 0.2s; }
+    .upload-area:hover, .upload-area.dragover { border-color: #58a6ff; }
+    .upload-area p { color: #8b949e; margin-top: 8px; font-size: 13px; }
+    .status { padding: 8px 12px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+    .status.success { background: #1b4331; color: #95d5b2; }
+    .status.error { background: #44201a; color: #f85149; }
+    .status.info { background: #1c3a5f; color: #58a6ff; }
+    .hidden { display: none; }
+    .auth-bar { background: #1c3a5f; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px;
+                display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .auth-bar input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+                      padding: 4px 8px; border-radius: 4px; flex: 1; }
+    .auth-bar .btn { padding: 4px 12px; }
+    #authSection { display: none; }
+  </style>
+</head>
+<body>
+  <h1>&#127760; My User Node</h1>
+
+  <!-- Auth section (shown when password is set) -->
+  <div id="authBar" class="auth-bar hidden">
+    <span>&#128274; Password:</span>
+    <input type="password" id="authPassword" placeholder="Enter your password">
+    <button class="btn btn-primary" onclick="authenticate()">Login</button>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- Profile Section -->
+  <h2>&#128100; Profile</h2>
+  <div class="card">
+    <div class="profile-info">
+      <div class="avatar" id="avatarDisplay">&#128100;</div>
+      <div class="profile-details">
+        <label>Nickname</label>
+        <input type="text" id="nickname" placeholder="Your nickname">
+        <label>Bio</label>
+        <textarea id="bio" placeholder="Tell us about yourself"></textarea>
+        <label>Avatar URL (optional)</label>
+        <input type="text" id="avatarUrl" placeholder="/media/avatar.jpg">
+        <div style="margin-top: 12px;">
+          <button class="btn btn-primary" onclick="saveProfile()">&#128190; Save Profile</button>
+          <button class="btn btn-secondary" onclick="showPasswordDialog()">&#128274; Set Password</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Section -->
+  <h2>&#128228; Upload Content</h2>
+  <div class="card">
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      <p>&#128196; Click to upload or drag &amp; drop</p>
+      <p>Supports: video, image, audio (max 5GB)</p>
+    </div>
+    <input type="file" id="fileInput" class="hidden" onchange="handleFileSelect(event)">
+    <div id="uploadForm" class="hidden" style="margin-top: 12px;">
+      <label>Title</label>
+      <input type="text" id="uploadTitle" placeholder="Content title" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin: 4px 0 12px;">
+      <label>Type</label>
+      <select id="uploadType" style="padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin: 4px 0 12px;">
+        <option value="video">Video</option>
+        <option value="image">Image</option>
+        <option value="audio">Audio</option>
+        <option value="article">Article</option>
+      </select>
+      <button class="btn btn-primary" onclick="uploadFile()">&#128228; Upload</button>
+      <button class="btn btn-secondary" onclick="cancelUpload()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Content List -->
+  <h2>&#128194; My Content</h2>
+  <div class="card">
+    <div id="contentList">
+      <p style="color: #8b949e; text-align: center;">Loading content...</p>
+    </div>
+  </div>
+
+  <script>
+    let authToken = '';
+    let selectedFile = null;
+
+    // --- Authentication ---
+
+    function getAuthHeader() {
+      if (authToken) return `Bearer ${authToken}`;
+      return '';
+    }
+
+    function authenticate() {
+      const password = document.getElementById('authPassword').value;
+      if (!password) return showStatus('Please enter your password', 'error');
+
+      // Use Bearer auth
+      authToken = password;
+
+      // Test the auth
+      fetch('/aura/profile', { headers: { Authorization: `Bearer ${password}` } })
+        .then(r => r.json())
+        .then(data => {
+          showStatus('Authenticated successfully', 'success');
+          document.getElementById('authBar').classList.add('hidden');
+          loadProfile();
+          loadContent();
+        })
+        .catch(() => {
+          authToken = '';
+          showStatus('Authentication failed', 'error');
+        });
+    }
+
+    // --- Profile ---
+
+    async function loadProfile() {
+      try {
+        const res = await fetch('/aura/profile');
+        const data = await res.json();
+
+        document.getElementById('nickname').value = data.nickname || '';
+        document.getElementById('bio').value = data.bio || '';
+        document.getElementById('avatarUrl').value = data.avatar || '';
+
+        if (data.avatar) {
+          document.getElementById('avatarDisplay').innerHTML =
+            `<img src="${data.avatar}" style="width:80px;height:80px;border-radius:50%;">`;
+        }
+
+        // Check if password is set (if auth was required)
+        if (!authToken && res.status === 200) {
+          // Profile loaded without auth, no password set
+        }
+      } catch (err) {
+        showStatus('Failed to load profile: ' + err.message, 'error');
+      }
+    }
+
+    async function saveProfile() {
+      try {
+        const body = {
+          nickname: document.getElementById('nickname').value,
+          bio: document.getElementById('bio').value,
+          avatar: document.getElementById('avatarUrl').value,
+        };
+
+        const res = await fetch('/aura/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthHeader(),
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (res.ok) {
+          showStatus('Profile saved successfully', 'success');
+          loadProfile();
+        } else {
+          const err = await res.json();
+          showStatus(err.message || 'Failed to save profile', 'error');
+        }
+      } catch (err) {
+        showStatus('Failed to save profile: ' + err.message, 'error');
+      }
+    }
+
+    function showPasswordDialog() {
+      const password = prompt('Enter your password (or leave empty to remove):');
+      if (password === null) return;
+
+      fetch('/aura/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: getAuthHeader(),
+        },
+        body: JSON.stringify({ password }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        showStatus(password ? 'Password set' : 'Password removed', 'success');
+        if (password) {
+          authToken = password;
+        }
+      })
+      .catch(err => showStatus('Failed to set password: ' + err.message, 'error'));
+    }
+
+    // --- Content ---
+
+    async function loadContent() {
+      try {
+        const res = await fetch('/api/content');
+        const items = await res.json();
+
+        if (items.length === 0) {
+          document.getElementById('contentList').innerHTML =
+            '<p style="color: #8b949e; text-align: center;">No content yet. Upload something!</p>';
+          return;
+        }
+
+        document.getElementById('contentList').innerHTML = items.map(item => `
+          <div class="content-item">
+            <div class="content-thumb">
+              ${item.thumbnail ? `<img src="${item.thumbnail}">` : item.type.toUpperCase()}
+            </div>
+            <div class="content-info">
+              <h3>${escapeHtml(item.title)} <span class="content-type">${item.type}</span></h3>
+              <p>${escapeHtml(item.description || '')} &middot; ${formatSize(item.file_size)} &middot; ${formatDate(item.created_at)}</p>
+            </div>
+            <div>
+              <a href="${item.url}" target="_blank" class="btn btn-secondary" style="text-decoration:none;">&#128279;</a>
+              <button class="btn btn-danger" onclick="deleteContent('${item.id}')">&#128465;</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showStatus('Failed to load content: ' + err.message, 'error');
+      }
+    }
+
+    async function deleteContent(id) {
+      if (!confirm('Delete this content?')) return;
+
+      try {
+        const res = await fetch(`/api/content/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: getAuthHeader() },
+        });
+
+        if (res.ok) {
+          showStatus('Content deleted', 'success');
+          loadContent();
+        } else {
+          const err = await res.json();
+          showStatus(err.message || 'Failed to delete', 'error');
+        }
+      } catch (err) {
+        showStatus('Failed to delete: ' + err.message, 'error');
+      }
+    }
+
+    // --- Upload ---
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      selectedFile = file;
+      document.getElementById('uploadForm').classList.remove('hidden');
+      document.getElementById('uploadTitle').value = file.name.replace(/\.[^.]+$/, '');
+
+      // Auto-detect type
+      const typeSelect = document.getElementById('uploadType');
+      if (file.type.startsWith('video/')) typeSelect.value = 'video';
+      else if (file.type.startsWith('image/')) typeSelect.value = 'image';
+      else if (file.type.startsWith('audio/')) typeSelect.value = 'audio';
+      else typeSelect.value = 'article';
+    }
+
+    function cancelUpload() {
+      selectedFile = null;
+      document.getElementById('uploadForm').classList.add('hidden');
+      document.getElementById('fileInput').value = '';
+    }
+
+    async function uploadFile() {
+      if (!selectedFile) return showStatus('No file selected', 'error');
+
+      const title = document.getElementById('uploadTitle').value;
+      const type = document.getElementById('uploadType').value;
+
+      if (!title) return showStatus('Title is required', 'error');
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('title', title);
+      formData.append('type', type);
+
+      try {
+        showStatus('Uploading...', 'info');
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { Authorization: getAuthHeader() },
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          showStatus(`Uploaded: ${data.title}`, 'success');
+          cancelUpload();
+          loadContent();
+        } else {
+          const err = await res.json();
+          showStatus(err.message || 'Upload failed', 'error');
+        }
+      } catch (err) {
+        showStatus('Upload failed: ' + err.message, 'error');
+      }
+    }
+
+    // --- Drag & Drop ---
+
+    const uploadArea = document.getElementById('uploadArea');
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        selectedFile = file;
+        document.getElementById('uploadForm').classList.remove('hidden');
+        document.getElementById('uploadTitle').value = file.name.replace(/\.[^.]+$/, '');
+      }
+    });
+
+    // --- Utilities ---
+
+    function showStatus(message, type) {
+      const el = document.getElementById('status');
+      el.className = `status ${type}`;
+      el.textContent = message;
+      setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let i = 0;
+      let size = bytes;
+      while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+      return `${size.toFixed(1)} ${units[i]}`;
+    }
+
+    function formatDate(dateStr) {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    // --- Initialize ---
+
+    (async () => {
+      try {
+        const res = await fetch('/aura/profile');
+        if (res.status === 401) {
+          document.getElementById('authBar').classList.remove('hidden');
+          showStatus('Password required. Please log in.', 'info');
+          return;
+        }
+        loadProfile();
+        loadContent();
+      } catch (err) {
+        showStatus('Connection error: ' + err.message, 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

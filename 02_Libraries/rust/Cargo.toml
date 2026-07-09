@@ -1,0 +1,17 @@
+[package]
+name = "kirin-dns"
+version = "0.1.0"
+edition = "2021"
+description = "KirinDNS Resolution Protocol (ADRP) — Rust Client Library"
+repository = "https://github.com/kirinnet/kirin-dns-rs"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+trust-dns-resolver = "0.23"
+thiserror = "1"
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

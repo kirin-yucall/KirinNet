@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>KirinNet — 浏览</title>
+  <style>
+    :root {
+      --bg: #000;
+      --text: #fff;
+      --text-muted: #aaa;
+      --accent: #f59e0b;
+      --overlay-bg: rgba(0,0,0,0.5);
+      --card-bg: rgba(20,20,30,0.9);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: none;
+    }
+
+    /* Swipe container */
+    .swipe-container {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .card-stack {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .card {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      background: #111;
+    }
+
+    .card.video-card { background: #000; }
+    .card.article-card { background: #1a1d27; }
+    .card.post-card { background: #0f0f1a; }
+
+    /* Media area (top 55%) */
+    .card-media {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+    .card-media img, .card-media video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .card-media .media-placeholder {
+      font-size: 80px;
+      opacity: 0.3;
+    }
+
+    /* Info area (bottom 45%) */
+    .card-info {
+      padding: 20px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8) 20%, rgba(0,0,0,0.95));
+      max-height: 50%;
+      overflow-y: auto;
+      z-index: 2;
+    }
+    .card-info h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+    .card-info .creator {
+      font-size: 13px;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .card-info .description {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .card-info .tags {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .card-info .tags span {
+      font-size: 11px;
+      color: var(--accent);
+      background: rgba(245,158,11,0.15);
+      padding: 3px 10px;
+      border-radius: 12px;
+    }
+    .card-info .stats {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 10px;
+    }
+
+    /* Top bar */
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(rgba(0,0,0,0.7), transparent);
+    }
+    .top-bar button {
+      background: rgba(255,255,255,0.15);
+      border: none;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: background 0.2s;
+    }
+    .top-bar button:hover { background: rgba(255,255,255,0.25); }
+    .top-bar button.active {
+      background: var(--accent);
+      color: #000;
+      font-weight: 600;
+    }
+
+    /* Loading */
+    .loader {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--text-muted);
+      font-size: 14px;
+      z-index: 50;
+    }
+  </style>
+</head>
+<body>
+  <div class="swipe-container">
+    <!-- Type filter -->
+    <div class="top-bar">
+      <button class="active" onclick="switchType('all')">全部</button>
+      <button onclick="switchType('post')">短贴</button>
+      <button onclick="switchType('video')">视频</button>
+      <button onclick="switchType('article')">文章</button>
+    </div>
+
+    <div class="card-stack" id="stack"></div>
+    <div class="loader" id="loader">加载中...</div>
+  </div>
+
+  <script>
+    const API = '/api/v1';
+    let currentType = 'all';
+    let currentIndex = -1;
+    let cards = [];
+    let loading = false;
+    let noMore = false;
+    let touchStartY = 0;
+    let touchDeltaY = 0;
+    let animating = false;
+
+    // ==================================================================
+    // Type switch
+    // ==================================================================
+    function switchType(type) {
+      currentType = type;
+      document.querySelectorAll('.top-bar button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      cards = [];
+      currentIndex = -1;
+      noMore = false;
+      document.getElementById('stack').innerHTML = '';
+      loadMore();
+    }
+
+    // ==================================================================
+    // Load content
+    // ==================================================================
+    async function loadMore() {
+      if (loading || noMore) return;
+      loading = true;
+      document.getElementById('loader').style.display = 'block';
+
+      try {
+        const cursor = cards.length > 0 ? cards[cards.length - 1].id : '';
+        const url = `${API}/swipe?type=${currentType}&limit=5${cursor ? '&cursor=' + cursor : ''}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.items.length === 0) {
+          noMore = true;
+          document.getElementById('loader').textContent = '没有更多了';
+        } else {
+          cards.push(...data.items);
+          if (!data.hasMore) noMore = true;
+          if (currentIndex === -1 && cards.length > 0) {
+            currentIndex = 0;
+            renderCurrent();
+          }
+        }
+      } catch (err) {
+        console.error('Load error:', err);
+        document.getElementById('loader').textContent = '加载失败';
+      } finally {
+        loading = false;
+        document.getElementById('loader').style.display = 'none';
+      }
+    }
+
+    // ==================================================================
+    // Render
+    // ==================================================================
+    function renderCurrent() {
+      const stack = document.getElementById('stack');
+      stack.innerHTML = '';
+
+      if (currentIndex >= cards.length) return;
+
+      // Show current card + next if exists
+      for (let i = 0; i < 2; i++) {
+        const idx = currentIndex + i;
+        if (idx >= cards.length) break;
+
+        const item = cards[idx];
+        const el = document.createElement('div');
+        el.className = `card ${item.category}-card`;
+        el.style.transform = `translateY(${i * 100}%)`;
+
+        const typeIcon = { post: '💬', video: '🎬', article: '📄' };
+        const typeLabel = { post: '短贴', video: '视频', article: '文章' };
+
+        el.innerHTML = `
+          <div class="card-media">
+            ${item.thumbnail_cid
+              ? `<img src="https://gateway.kirinnet.org/ipfs/${item.thumbnail_cid}" alt="" loading="lazy">`
+              : `<span class="media-placeholder">${typeIcon[item.category] || '📦'}</span>`
+            }
+          </div>
+          <div class="card-info">
+            <span style="font-size:11px;color:var(--accent);">${typeLabel[item.category] || item.category}</span>
+            ${item.title ? `<h2>${esc(item.title)}</h2>` : ''}
+            <div class="creator">@${esc(item.creator_domain)}</div>
+            ${item.description ? `<div class="description">${esc(item.description)}</div>` : ''}
+            ${item.tags && item.tags.length ? `
+              <div class="tags">${item.tags.map(t => `<span>#${esc(t)}</span>`).join('')}</div>
+            ` : ''}
+            <div class="stats">${item.view_count || 0} 次浏览 · ${formatDate(item.created_at)}</div>
+          </div>
+        `;
+        stack.appendChild(el);
+      }
+    }
+
+    // ==================================================================
+    // Touch handling
+    // ==================================================================
+    const container = document.querySelector('.swipe-container');
+
+    container.addEventListener('touchstart', (e) => {
+      if (animating) return;
+      touchStartY = e.touches[0].clientY;
+      touchDeltaY = 0;
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (e) => {
+      if (animating) return;
+      touchDeltaY = e.touches[0].clientY - touchStartY;
+      const cards = document.querySelectorAll('.card');
+      if (cards.length > 0) {
+        const pct = Math.max(-100, Math.min(0, (touchDeltaY / window.innerHeight) * 100));
+        cards[0].style.transform = `translateY(${pct}%)`;
+        if (cards[1]) cards[1].style.transform = `translateY(${100 + pct}%)`;
+      }
+    }, { passive: true });
+
+    container.addEventListener('touchend', () => {
+      if (animating) return;
+      const threshold = window.innerHeight * 0.2;
+
+      if (Math.abs(touchDeltaY) > threshold) {
+        animating = true;
+        if (touchDeltaY < -threshold) {
+          // Swipe up: next
+          if (currentIndex < cards.length - 1) {
+            animateSwipe(-100);
+            currentIndex++;
+            setTimeout(() => {
+              renderCurrent();
+              animating = false;
+              // Preload more
+              if (currentIndex >= cards.length - 2 && !noMore) loadMore();
+            }, 350);
+          } else {
+            // No more — animate but then settle back down, then try loading
+            animateSwipe(-30);
+            setTimeout(() => {
+              animateSwipe(0);
+              animating = false;
+              loadMore();
+            }, 200);
+          }
+        } else {
+          // Swipe down: previous
+          if (currentIndex > 0) {
+            animateSwipe(100);
+            currentIndex--;
+            setTimeout(() => {
+              renderCurrent();
+              animating = false;
+            }, 350);
+          } else {
+            snapBack();
+          }
+        }
+      } else {
+        snapBack();
+      }
+    });
+
+    // Wheel support (desktop)
+    container.addEventListener('wheel', (e) => {
+      if (animating) return;
+      if (Math.abs(e.deltaY) > 40) {
+        if (e.deltaY > 0) {
+          // Scroll down = next
+          if (currentIndex < cards.length - 1) {
+            animating = true;
+            currentIndex++;
+            animateSwipe(-100);
+            setTimeout(() => { renderCurrent(); animating = false; }, 350);
+          }
+        } else {
+          if (currentIndex > 0) {
+            animating = true;
+            currentIndex--;
+            animateSwipe(100);
+            setTimeout(() => { renderCurrent(); animating = false; }, 350);
+          }
+        }
+      }
+    }, { passive: true });
+
+    function animateSwipe(pct) {
+      const cards = document.querySelectorAll('.card');
+      cards.forEach((c, i) => {
+        c.style.transition = 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        c.style.transform = `translateY(${pct + i * 100}%)`;
+      });
+    }
+
+    function snapBack() {
+      const cards = document.querySelectorAll('.card');
+      cards.forEach((c, i) => {
+        c.style.transition = 'transform 0.3s ease-out';
+        c.style.transform = `translateY(${i * 100}%)`;
+      });
+      animating = false;
+    }
+
+    // ==================================================================
+    // Helpers
+    // ==================================================================
+    function esc(s) {
+      if (!s) return '';
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+    function formatDate(d) {
+      if (!d) return '';
+      const dt = new Date(d);
+      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    }
+
+    // Init
+    loadMore();
+  </script>
+</body>
+</html>

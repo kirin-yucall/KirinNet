@@ -1,0 +1,53 @@
+{
+  "project": "KirinDNS",
+  "phases": [
+    {
+      "id": "phase1",
+      "name": "Protocol Standard",
+      "description": "Define the KirinDNS Resolution Protocol (ADRP) specification",
+      "status": "DONE"
+    },
+    {
+      "id": "phase2",
+      "name": "Library Implementations",
+      "description": "Implement ADRP client libraries in Python, JavaScript, Go, and Rust",
+      "status": "DONE"
+    },
+    {
+      "id": "phase3",
+      "name": "Browser Extension",
+      "description": "Build a browser extension that intercepts requests and resolves ports via ADRP",
+      "status": "DONE"
+    },
+    {
+      "id": "phase4",
+      "name": "Chromium Browser Fork",
+      "description": "Fork Chromium and patch the networking layer to support native ADRP resolution",
+      "status": "DONE"
+    },
+    {
+      "id": "phase5",
+      "name": "Adoption and RFC",
+      "description": "Draft RFC submission, publish demo sites, and drive community adoption",
+      "status": "DONE"
+    },
+    {
+      "id": "phase6",
+      "name": "Open Source Release",
+      "description": "Finalize project for public release: tests, CI/CD, documentation",
+      "status": "DONE"
+    },
+    {
+      "id": "phase7",
+      "name": "KirinNet Platform",
+      "description": "Design KirinNet decentralized content platform architecture and API contract",
+      "status": "DONE"
+    },
+    {
+      "id": "phase8",
+      "name": "KirinNet Implementation",
+      "description": "Implement KirinNet backend (Express) and frontend (Next.js) scaffolding with mock KirinDNS",
+      "status": "DONE"
+    }
+  ]
+}

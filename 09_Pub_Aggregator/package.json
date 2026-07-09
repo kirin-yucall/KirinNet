@@ -1,0 +1,14 @@
+{
+  "name": "kirinnet-aggregator",
+  "version": "1.0.0",
+  "description": "KirinNet Public Aggregator — indexes and displays content from User Nodes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "crawl": "node crawler.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^11.0.0"
+  }
+}
