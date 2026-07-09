@@ -58,13 +58,13 @@ correct port, and connects transparently. The user simply types:
 ### Python
 
 ```bash
-pip install aura-dns dnspython
+pip install kirin-dns dnspython
 ```
 
 ```python
-from aura_dns import resolve_aura_dns
+from kirin_dns import resolve_kirin_dns
 
-ports = resolve_aura_dns("example.com")
+ports = resolve_kirin_dns("example.com")
 # Returns: {"http": 8080, "https": 8443}
 # Falls back to: {"http": 80, "https": 443} if no ADRP record
 ```
@@ -72,13 +72,13 @@ ports = resolve_aura_dns("example.com")
 ### JavaScript / Node.js
 
 ```bash
-npm install aura-dns
+npm install kirin-dns
 ```
 
 ```javascript
-const { resolve_aura_dns } = require('aura-dns');
+const { resolve_kirin_dns } = require('kirin-dns');
 
-const ports = await resolve_aura_dns('example.com');
+const ports = await resolve_kirin_dns('example.com');
 // Returns: { http: 8080, https: 8443 }
 // Falls back to: { http: 80, https: 443 } if no ADRP record
 ```
@@ -86,26 +86,26 @@ const ports = await resolve_aura_dns('example.com');
 ### Go
 
 ```bash
-go get github.com/kirindns/go-kirindns
+go get github.com/kirinnet/kirin-dns-go
 ```
 
 ```go
-import "github.com/kirindns/go-kirindns"
+import "github.com/kirinnet/kirin-dns-go"
 
-ports, err := kirindns.ResolveKirinDNS("example.com")
+ports, err := kirindns.Resolve("example.com")
 // Returns: map[string]int{"http": 8080, "https": 8443}
 ```
 
 ### Rust
 
 ```bash
-cargo add aura-dns
+cargo add kirin-dns
 ```
 
 ```rust
-use aura_dns::resolve_aura_dns;
+use kirin_dns::KirinDns;
 
-let ports = resolve_aura_dns("example.com").await?;
+let ports = KirinDns::resolve("example.com").await?;
 // Returns: HashMap with {"http": 8080, "https": 8443}
 ```
 
@@ -206,9 +206,9 @@ Found a bug? Open an issue on GitHub with:
 If you want to add ADRP support for a new language:
 
 1. Create a new directory under `02_Libraries/<language>/`
-2. Implement the core function: `resolve_aura_dns(domain) -> {ports}`
+2. Implement the core function: `resolve_kirin_dns(domain) -> {ports}`
 3. Add tests that match the cross-language test matrix in
-   `02_Libraries/python/tests/test_aura_dns.py` (the `TestCrossLanguageConsistency` class)
+   `02_Libraries/python/tests/test_kirin_dns.py` (the `TestCrossLanguageConsistency` class)
 4. Add the language to the CI workflow in `.github/workflows/ci.yml`
 5. Submit a PR
 
