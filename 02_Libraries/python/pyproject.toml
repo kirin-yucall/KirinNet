@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kirin-dns"
+version = "0.1.0"
+description = "KirinDNS (ADRP) — Port-aware DNS resolution client library"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "kirin-yucall", email = "kirin.yucall@gmail.com"},
+]
+keywords = ["dns", "adrp", "kirindns", "port-discovery", "web3"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Name Service (DNS)",
+]
+dependencies = [
+    "dnspython>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kirin-yucall/KirinNet"
+Repository = "https://github.com/kirin-yucall/KirinNet"
+Issues = "https://github.com/kirin-yucall/KirinNet/issues"
+
+[tool.setuptools]
+py-modules = ["kirin_dns"]

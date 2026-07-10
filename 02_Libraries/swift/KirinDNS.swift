@@ -1,145 +1,258 @@
-// KirinDNS.swift — KirinDNS Resolution Protocol (ADRP) Swift Client
+// KirinDNS.swift — KirinDNS Resolution Protocol (ADRP) v2.0 Swift Client
 //
-// Resolves service port mappings from DNS TXT records.
-// No external dependencies — uses Foundation only.
+// Implements ADRP as defined in 01_Standard/spec_v1.md.
+//
+// Architecture:
+//   SRV records for service port discovery (_kirinnet-http._tcp, etc.)
+//   TXT records for identity metadata (id=;key=;nick=;ipfs=)
+//
+// No external dependencies — uses Foundation and `dig` via Process.
 //
 // Usage:
-//   let ports = try await KirinDNS.resolve("alice.kirinnet.org")
-//   print("HTTP: \(ports.http)")
+//   let srv = try await KirinDNS.resolveService("alice.kirinnet.org", "ws")
+//   print(srv)  // SrvResult(target: "alice.kirinnet.org", port: 8082)
+//   let id = try await KirinDNS.resolveIdentity("alice.kirinnet.org")
+//   print(id)   // ["id": "550e8400-...", "key": "04abc..."]
 //
-// Platform: macOS 12+ / iOS 15+ / Linux (with SwiftNIO or dig fallback)
+// Platform: macOS 12+ / iOS 15+ / Linux
 
 import Foundation
 
-/// Recognized ADRP keys.
-private let recognizedKeys: Set<String> = ["http", "https", "ws", "wss"]
+// ---------------------------------------------------------------------------
+// Constants (spec Section 2.2)
+// ---------------------------------------------------------------------------
 
-/// Standard IANA fallback ports.
-public struct KirinPorts: Equatable, Codable {
-    public let http: UInt16
-    public let https: UInt16
-    public let ws: UInt16
-    public let wss: UInt16
+/// SRV service names.
+private let srvServices: [String: String] = [
+    "http":  "_kirinnet-http._tcp",
+    "https": "_kirinnet-https._tcp",
+    "ws":    "_kirinnet-ws._tcp",
+]
 
-    public static let fallback = KirinPorts(http: 80, https: 443, ws: 80, wss: 443)
+/// Fallback ports.
+public let fallbackPorts: [String: Int] = [
+    "http":  80,
+    "https": 443,
+    "ws":    80,
+    "wss":   443,
+]
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/// Resolved SRV service target.
+public struct SrvResult: Equatable, Codable {
+    public let target: String
+    public let port: Int
+
+    public init(target: String, port: Int) {
+        self.target = target
+        self.port = port
+    }
 }
 
-/// KirinDNS ADRP resolver.
+/// KirinDNS identity from TXT record.
+public typealias KirinIdentity = [String: Any]
+
+// ---------------------------------------------------------------------------
+// DNS query helpers (using dig)
+// ---------------------------------------------------------------------------
+
+/// Run `dig +short <rtype> <name>` and return output lines.
+private func digQuery(rtype: String, name: String) async throws -> [String] {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["dig", "+short", rtype, name]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    try process.run()
+    process.waitUntilExit()
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    guard let output = String(data: data, encoding: .utf8) else { return [] }
+
+    return output
+        .components(separatedBy: "\n")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+}
+
+// ---------------------------------------------------------------------------
+// Service Resolution (SRV)
+// ---------------------------------------------------------------------------
+
+/// Resolve a single service port via SRV.
+///
+/// Returns [SrvResult] or nil if no SRV record found.
+public func resolveService(_ domain: String, _ service: String) async throws -> SrvResult? {
+    guard let srvName = srvServices[service] else {
+        throw KirinError("Unknown service: \(service). Recognized: http, https, ws")
+    }
+
+    let fullName = "\(srvName).\(domain)"
+    let lines = try await digQuery(rtype: "SRV", name: fullName)
+    guard !lines.isEmpty else { return nil }
+
+    // Parse SRV records: "priority weight port target"
+    var records: [(priority: Int, weight: Int, port: Int, target: String)] = []
+    for line in lines {
+        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard parts.count >= 4,
+              let pri = Int(parts[0]),
+              let weight = Int(parts[1]),
+              let port = Int(parts[2]) else { continue }
+        let target = parts[3].hasSuffix(".") ? String(parts[3].dropLast()) : parts[3]
+        records.append((pri, weight, port, target))
+    }
+
+    guard !records.isEmpty else { return nil }
+
+    // RFC 2782: sort by priority asc, then weight desc
+    records.sort { a, b in
+        if a.priority != b.priority { return a.priority < b.priority }
+        return a.weight > b.weight
+    }
+
+    let best = records[0]
+    return SrvResult(target: best.target, port: best.port)
+}
+
+/// Resolve all SRV services for a domain.
+public func resolveAllServices(_ domain: String) async throws -> [String: SrvResult?] {
+    var results: [String: SrvResult?] = [:]
+    for svc in srvServices.keys {
+        results[svc] = try await resolveService(domain, svc)
+    }
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// Identity Resolution (TXT)
+// ---------------------------------------------------------------------------
+
+/// Parse a semicolon-separated key=value TXT string into an identity dict.
+///
+/// Format: id=<uuid>;key=<hex>;nick=<name>;ipfs=<bool>
+/// (spec Section 3.2)
+///
+/// Returns nil if not a valid identity record.
+public func parseIdentityTxt(_ txt: String) -> KirinIdentity? {
+    let trimmed = txt.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty, trimmed.hasPrefix("id=") else { return nil }
+
+    var result: KirinIdentity = [:]
+    for pair in trimmed.components(separatedBy: ";") {
+        let parts = pair.components(separatedBy: "=")
+        guard parts.count >= 2 else { continue }
+        let key = parts[0].trimmingCharacters(in: .whitespaces)
+        let val = parts.dropFirst().joined(separator: "=").trimmingCharacters(in: .whitespaces)
+        result[key] = val
+    }
+
+    // Both id and key are required
+    guard result["id"] != nil, result["key"] != nil else { return nil }
+
+    // Parse ipfs boolean
+    if let ipfsStr = result["ipfs"] as? String {
+        result["ipfs"] = (ipfsStr == "true")
+    }
+
+    return result
+}
+
+/// Resolve identity metadata from TXT record.
+public func resolveIdentity(_ domain: String) async throws -> KirinIdentity? {
+    let lines = try await digQuery(rtype: "TXT", name: domain)
+    for line in lines {
+        // Strip surrounding quotes from dig output
+        var txt = line
+        if txt.hasPrefix("\"") && txt.hasSuffix("\"") {
+            txt = String(txt.dropFirst().dropLast())
+        }
+        txt = txt.replacingOccurrences(of: "\\\"", with: "\"")
+        if let identity = parseIdentityTxt(txt) {
+            return identity
+        }
+    }
+    return nil
+}
+
+// ---------------------------------------------------------------------------
+// Legacy Compatibility Wrapper
+// ---------------------------------------------------------------------------
+
+/// Full resolution: SRV + TXT + identity (legacy wrapper).
+///
+/// New code should use resolveService() and resolveIdentity() directly.
+public func resolveKirinDns(_ domain: String) async throws -> [String: Any] {
+    let ws = try await resolveService(domain, "ws")
+    return [
+        "domain": domain,
+        "ws": ws ?? SrvResult(target: domain, port: fallbackPorts["ws"]!),
+        "http": try await resolveService(domain, "http") as Any,
+        "https": try await resolveService(domain, "https") as Any,
+        "identity": try await resolveIdentity(domain) as Any,
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// KirinDNS namespace and error type
+// ---------------------------------------------------------------------------
+
 public enum KirinDNS {
+    public struct KirinError: Error, CustomStringConvertible {
+        public let message: String
+        public init(_ message: String) { self.message = message }
+        public var description: String { "KirinDNS error: \(message)" }
+    }
+}
 
-    /// Resolve KirinDNS ports for a domain.
-    /// Returns fallback ports if no valid ADRP record exists.
-    public static func resolve(_ domain: String) async throws -> KirinPorts {
-        let txtRecords = try await queryTXT(domain)
-        for txt in txtRecords {
-            if let ports = parseTXT(txt) {
-                return ports
-            }
-        }
-        return .fallback
+public typealias KirinError = KirinDNS.KirinError
+
+// ---------------------------------------------------------------------------
+// Self-test
+// ---------------------------------------------------------------------------
+
+public func kirinDnsSelfTest() async {
+    // SRV nonexistent domain
+    let ws = try? await resolveService("nonexistent.invalid", "ws")
+    assert(ws == nil, "no SRV for nonexistent domain")
+
+    // TXT identity nonexistent domain
+    let id = try? await resolveIdentity("nonexistent.invalid")
+    assert(id == nil, "no TXT identity for nonexistent domain")
+
+    // Identity parser
+    let parsed = parseIdentityTxt(
+        "id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false"
+    )
+    assert(parsed != nil, "identity parsed")
+    assert(parsed!["id"] as? String == "550e8400-e29b-41d4-a716-446655440000")
+    assert(parsed!["key"] as? String == "04abc")
+    assert(parsed!["nick"] as? String == "Alice")
+    assert(parsed!["ipfs"] as? Bool == false)
+
+    let minimal = parseIdentityTxt("id=test-id;key=0x00")
+    assert(minimal != nil, "minimal")
+    assert(minimal!["id"] as? String == "test-id")
+    assert(minimal!["key"] as? String == "0x00")
+    assert(minimal!["nick"] == nil)
+
+    // Invalid TXT
+    assert(parseIdentityTxt("v=spf1 include:_spf.example.com") == nil)
+    assert(parseIdentityTxt("") == nil)
+    assert(parseIdentityTxt("not an identity") == nil)
+
+    // Legacy wrapper
+    let full = try? await resolveKirinDns("nonexistent.invalid")
+    if let full = full {
+        let wsLegacy = full["ws"] as? SrvResult
+        assert(wsLegacy?.port == 80, "legacy ws fallback")
     }
 
-    /// Parse a TXT record string as ADRP JSON.
-    /// Returns nil if not a valid ADRP record.
-    public static func parseTXT(_ txt: String) -> KirinPorts? {
-        let trimmed = txt.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("{") else { return nil }
-
-        guard let data = trimmed.data(using: .utf8) else { return nil }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-
-        var http: UInt16 = 0
-        var https: UInt16 = 0
-        var ws: UInt16 = 0
-        var wss: UInt16 = 0
-        var found = false
-
-        for key in recognizedKeys {
-            guard let raw = json[key] else { continue }
-            let val: UInt16
-            if let n = raw as? UInt16 {
-                val = n
-            } else if let n = raw as? Int, n >= 1, n <= 65535 {
-                val = UInt16(n)
-            } else if let n = raw as? Double, n >= 1, n <= 65535, n == floor(n) {
-                val = UInt16(n)
-            } else {
-                return nil
-            }
-            guard val >= 1 else { return nil }
-
-            switch key {
-            case "http":  http = val
-            case "https": https = val
-            case "ws":    ws = val
-            case "wss":   wss = val
-            default: break
-            }
-            found = true
-        }
-
-        guard found else { return nil }
-
-        return KirinPorts(
-            http:  http  > 0 ? http  : 80,
-            https: https > 0 ? https : 443,
-            ws:    ws    > 0 ? ws    : 80,
-            wss:   wss   > 0 ? wss   : 443
-        )
-    }
-
-    // ---- internal DNS TXT query -----------------------------------------
-
-    private static func queryTXT(_ domain: String) async throws -> [String] {
-        // Primary: use 'dig' via Process (portable across macOS/Linux)
-        // In production, replace with NWConnection raw DNS or dnssd C API.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["dig", "+short", "TXT", domain]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        try process.run()
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return [] }
-
-        // Parse dig output: lines are quoted TXT values
-        var results: [String] = []
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-            // Strip surrounding quotes
-            var txt = trimmed
-            if txt.hasPrefix("\"") && txt.hasSuffix("\"") {
-                txt = String(txt.dropFirst().dropLast())
-            }
-            // Handle escaped quotes
-            txt = txt.replacingOccurrences(of: "\\\"", with: "\"")
-            results.append(txt)
-        }
-        return results
-    }
-
-    // ---- self-test -------------------------------------------------------
-    public static func selfTest() {
-        // Parse tests
-        let p = parseTXT(#"{"http":8080,"https":8443}"#)
-        assert(p != nil, "valid parse")
-        assert(p!.http == 8080, "http")
-        assert(p!.https == 8443, "https")
-        assert(p!.ws == 80, "ws fallback")
-        assert(p!.wss == 443, "wss fallback")
-
-        assert(parseTXT("{}") == nil, "empty")
-        assert(parseTXT(#"{"http":0}"#) == nil, "port zero")
-        assert(parseTXT("not json") == nil, "not json")
-
-        print("KirinDNS Swift self-test: PASSED")
-    }
+    print("KirinDNS Swift self-test: PASSED")
 }

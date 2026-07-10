@@ -1,37 +1,41 @@
 """
-KirinDNS Resolution Protocol (ADRP) — Python Client Library
+KirinDNS Resolution Protocol (ADRP) v2.0 -- Python Client Library
 
 Implements ADRP as defined in 01_Standard/spec_v1.md.
 
-Resolution algorithm:
-  1. Query TXT records for the target domain.
-  2. Iterate through each TXT record; attempt to parse as JSON.
-  3. The first record that parses as valid JSON and contains at least one
-     recognized key (http, https, ws, wss) is the ADRP response.
-  4. If no valid ADRP record is found, return the standard fallback ports.
+Architecture:
+  SRV records for service port discovery (_kirinnet-http._tcp, etc.)
+  TXT records for identity metadata (id=;key=;nick=;ipfs=)
 
 Dependencies: dnspython
     pip install dnspython
 
 Example usage:
-    >>> from aura_dns import resolve_kirin_dns
-    >>> ports = resolve_kirin_dns("example.com")
-    >>> print(ports)
-    {'https': 8443}
-
-    >>> ports = resolve_kirin_dns("nonexistent.invalid")
-    >>> print(ports)
-    {'http': 80, 'https': 443}
+    >>> from kirin_dns import resolve_service, resolve_identity
+    >>> srv = resolve_service("alice.kirinnet.org", "ws")
+    >>> print(srv)
+    SRVResult(target='alice.kirinnet.org', port=8082)
+    >>> identity = resolve_identity("alice.kirinnet.org")
+    >>> print(identity)
+    {'id': '550e8400-...', 'key': '04abc...', 'nick': 'Alice'}
 """
 
-import json
-from typing import Dict
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 import dns.resolver
 from dns.exception import DNSException
 
-# Recognized ADRP keys and their fallback ports (Section 3.2, Step 5)
-_RECOGNIZED_KEYS = frozenset({"http", "https", "ws", "wss"})
+# ---------------------------------------------------------------------------
+# Constants (spec Section 2.2)
+# ---------------------------------------------------------------------------
+
+_SRV_SERVICES = {
+    "http":  "_kirinnet-http._tcp",
+    "https": "_kirinnet-https._tcp",
+    "ws":    "_kirinnet-ws._tcp",
+}
+
 _FALLBACK_PORTS = {
     "http": 80,
     "https": 443,
@@ -40,111 +44,169 @@ _FALLBACK_PORTS = {
 }
 
 
-def _validate_kirin_dns_record(data: Dict) -> bool:
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SRVResult:
+    """Resolved SRV service target."""
+    target: str
+    port: int
+
+
+# ---------------------------------------------------------------------------
+# Service Resolution (SRV)
+# ---------------------------------------------------------------------------
+
+def resolve_service(domain: str, service: str) -> Optional[SRVResult]:
     """
-    Validate an ADRP JSON payload against the spec (Section 3.1).
+    Resolve a single service port via SRV.
 
-    Rules:
-      - All values MUST be integers in the range 1-65535.
-      - At least one recognized key MUST be present.
-      - Duplicate keys are caught by json.loads (raises ValueError),
-        so we do not need to check explicitly here.
+    Args:
+        domain:  e.g., 'alice.kirinnet.org'
+        service: 'http', 'https', or 'ws'
+
+    Returns:
+        SRVResult(target, port) or None if no SRV record found.
     """
-    if not isinstance(data, dict):
-        return False
+    srv_name = _SRV_SERVICES.get(service)
+    if not srv_name:
+        raise ValueError(f"Unknown service: {service}. Recognized: http, https, ws")
 
-    recognized_keys_present = False
-    for key, value in data.items():
-        if key in _RECOGNIZED_KEYS:
-            recognized_keys_present = True
-            if not isinstance(value, int) or value < 1 or value > 65535:
-                return False
-        # Keys not in _RECOGNIZED_KEYS are ignored (spec Section 3.1.1)
+    full_name = f"{srv_name}.{domain}"
 
-    return recognized_keys_present
-
-
-def _parse_txt_value(record: str) -> Dict:
-    """
-    Parse a single TXT record string as JSON.
-
-    The spec (Section 3.1.1) requires the JSON object to be the sole content
-    of the TXT character string. We strip surrounding whitespace but do not
-    tolerate additional text.
-    """
-    text = record.strip()
     try:
-        parsed = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return {}  # Not valid JSON — skip this record
+        answers = dns.resolver.resolve(full_name, "SRV")
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, DNSException):
+        return None
 
-    if _validate_kirin_dns_record(parsed):
-        return parsed
-    return {}  # Valid JSON but not a valid ADRP record
+    # RFC 2782: lowest priority, then highest weight
+    records = sorted(answers, key=lambda r: (r.priority, -r.weight))
+    if not records:
+        return None
+
+    best = records[0]
+    target = str(best.target).rstrip(".")
+    return SRVResult(target=target, port=best.port)
 
 
-def resolve_kirin_dns(domain: str) -> Dict[str, int]:
+def resolve_all_services(domain: str) -> Dict[str, Optional[SRVResult]]:
     """
-    Resolve the KirinDNS ports for *domain*.
+    Resolve all SRV services for a domain.
 
-    Returns a dict mapping protocol keys to port numbers.  If the domain has
-    no valid ADRP TXT record, the standard fallback ports are returned.
-
-    Raises
-    ------
-    DNSException
-        If the DNS query itself fails (network error, timeout, etc.).
+    Returns:
+        {'http': SRVResult|None, 'https': SRVResult|None, 'ws': SRVResult|None}
     """
-    # Start with full fallback; recognized keys will be overwritten if found.
-    result = dict(_FALLBACK_PORTS)
+    return {svc: resolve_service(domain, svc) for svc in _SRV_SERVICES}
 
-    # Step 1 — Issue TXT query (spec Section 3.2, Step 1)
+
+# ---------------------------------------------------------------------------
+# Identity Resolution (TXT)
+# ---------------------------------------------------------------------------
+
+def parse_identity_txt(text: str) -> Optional[Dict]:
+    """
+    Parse a semicolon-separated key=value TXT string into an identity dict.
+
+    Format: id=<uuid>;key=<hex>;nick=<name>;ipfs=<bool>
+    (spec Section 3.2)
+
+    Returns None if not a valid identity record.
+    """
+    if not text or not text.startswith("id="):
+        return None
+
+    result = {}
+    for pair in text.split(";"):
+        if "=" not in pair:
+            continue
+        key, val = pair.split("=", 1)
+        key, val = key.strip(), val.strip()
+        result[key] = val
+
+    # Both id and key are required
+    if "id" not in result or "key" not in result:
+        return None
+
+    # Parse ipfs boolean
+    if "ipfs" in result:
+        result["ipfs"] = result["ipfs"].lower() == "true"
+
+    return result
+
+
+def resolve_identity(domain: str) -> Optional[Dict]:
+    """
+    Resolve identity metadata from TXT record.
+
+    Returns:
+        {'id': str, 'key': str, 'nick'?: str, 'ipfs'?: bool} or None.
+    """
     try:
         answers = dns.resolver.resolve(domain, "TXT")
-    except dns.resolver.NoAnswer:
-        # No TXT records at all — fall back to defaults.
-        return result
-    except dns.resolver.NXDOMAIN:
-        # Domain does not exist — fall back to defaults.
-        return result
-    except DNSException:
-        # Network error, timeout, etc. — fall back to defaults.
-        return result
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, DNSException):
+        return None
 
-    # Step 2-3 — Aggregate and parse (spec Section 3.1.2, "first valid" rule)
     for rdata in answers:
-        # dns.resolver returns TXT RDATA as a tuple of strings that may
-        # be concatenated.  Join them to reconstruct the full TXT value.
-        txt_value = "".join(rdata.strings)
-        parsed = _parse_txt_value(txt_value)
-        if parsed:  # Found the first valid ADRP record
-            # Overwrite only the keys present in the record; missing keys
-            # retain their fallback values.
-            result.update(parsed)
-            return result
+        txt = "".join(s.decode("utf-8") if isinstance(s, bytes) else s
+                       for s in rdata.strings)
+        identity = parse_identity_txt(txt)
+        if identity:
+            return identity
 
-    # No valid ADRP record found — return fallback.
-    return result
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Legacy Compatibility Wrapper
+# ---------------------------------------------------------------------------
+
+def resolve_kirin_dns(domain: str) -> Dict:
+    """
+    Full resolution: SRV + TXT + identity (legacy wrapper).
+
+    New code should use resolve_service() and resolve_identity() directly.
+    """
+    return {
+        "domain": domain,
+        "ws": resolve_service(domain, "ws") or SRVResult(target=domain, port=_FALLBACK_PORTS["ws"]),
+        "http": resolve_service(domain, "http"),
+        "https": resolve_service(domain, "https"),
+        "identity": resolve_identity(domain),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Self-test (run with: python -m kirin_dns)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Example: query a real domain (will likely return fallback ports)
-    test_domain = "example.com"
-    print(f"ADRP query for {test_domain}: {resolve_kirin_dns(test_domain)}")
+    # Test non-existent domain
+    ws = resolve_service("nonexistent.invalid", "ws")
+    assert ws is None, f"Expected None, got {ws}"
+    print(f"nonexistent.invalid WS: {ws}  (expected None)")
 
-    # Example: NXDOMAIN should return fallback
-    print(f"ADRP query for nonexistent.invalid: {resolve_kirin_dns('nonexistent.invalid')}")
+    identity = resolve_identity("nonexistent.invalid")
+    assert identity is None, f"Expected None, got {identity}"
+    print(f"nonexistent.invalid identity: {identity}  (expected None)")
 
-    # Internal unit tests
-    assert _validate_kirin_dns_record({"http": 8080, "https": 8443}) is True
-    assert _validate_kirin_dns_record({"https": 443}) is True
-    assert _validate_kirin_dns_record({"ws": 0}) is False          # port out of range
-    assert _validate_kirin_dns_record({"ws": 65536}) is False      # port out of range
-    assert _validate_kirin_dns_record({"ws": "80"}) is False       # not an int
-    assert _validate_kirin_dns_record({"unknown": 80}) is False    # no recognized key
-    assert _validate_kirin_dns_record({}) is False                  # empty dict
-    assert _validate_kirin_dns_record("not a dict") is False        # wrong type
-    print("Internal unit tests passed.")
+    # Identity parser tests
+    parsed = parse_identity_txt(
+        "id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false"
+    )
+    assert parsed["id"] == "550e8400-e29b-41d4-a716-446655440000"
+    assert parsed["key"] == "04abc"
+    assert parsed["nick"] == "Alice"
+    assert parsed["ipfs"] is False
+
+    minimal = parse_identity_txt("id=test-id;key=0x00")
+    assert minimal["id"] == "test-id"
+    assert minimal["key"] == "0x00"
+    assert "nick" not in minimal
+
+    # Invalid
+    assert parse_identity_txt("v=spf1 include:_spf.example.com") is None
+    assert parse_identity_txt("") is None
+    assert parse_identity_txt("not an identity") is None
+
+    print("KirinDNS Python self-test: PASSED")

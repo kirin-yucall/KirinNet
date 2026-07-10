@@ -1,168 +1,126 @@
 /**
- * service_worker.js — KirinDNS Browser Extension Service Worker
+ * service_worker.js -- KirinDNS Browser Extension Service Worker (v2.0)
  *
- * Intercepts HTTP/HTTPS requests and redirects them to ADRP-discovered
+ * Intercepts HTTP/HTTPS requests and redirects them to SRV-discovered
  * non-standard ports.
  *
  * Architecture:
- *   - An in-memory cache (ADRP_CACHE) holds domain -> ports mappings.
- *     This is loaded from chrome.storage.local on startup so that the
- *     webRequest.onBeforeRequest callback can redirect synchronously.
- *   - When a request arrives for a domain not in the cache, the worker
- *     resolves ADRP in the background. The current request is NOT blocked;
- *     it proceeds to the default port. Subsequent requests to the same
- *     domain will be redirected because the cache will have been populated.
+ *   - An in-memory SRV cache (SRV_CACHE) holds domain+service -> {target, port}.
+ *   - An in-memory identity cache (IDENTITY_CACHE) holds domain -> identity.
+ *   - Loaded from chrome.storage.local on startup for synchronous redirects.
+ *   - When a request arrives for a domain not in cache, the worker resolves
+ *     SRV in the background. The current request proceeds to the default port;
+ *     subsequent requests to the same domain will be redirected.
  *
- * Manifest V3 constraint: webRequest.onBeforeRequest with the "blocking"
- * extra info spec requires a synchronous callback. Because DNS resolution
- * is async, we cannot block the first request to a new domain. The in-memory
- * cache makes subsequent redirects synchronous.
- *
- * Error handling: If DoH resolution fails (network error, DNS failure), the
- * request proceeds to the default port. We never cancel a user's request due
- * to ADRP resolution failures.
+ * Manifest V3 constraint: webRequest.onBeforeRequest with "blocking" requires
+ * a synchronous callback. Because DNS resolution is async, we cannot block the
+ * first request to a new domain. The in-memory cache makes subsequent
+ * redirects synchronous.
  */
 
 // ---------------------------------------------------------------------------
-// In-memory ADRP cache (loaded from chrome.storage.local on startup)
+// In-memory caches (loaded from chrome.storage.local on startup)
 // ---------------------------------------------------------------------------
 
-/** @type {Map<string, object>} domain -> ports object */
-const ADRP_CACHE = new Map();
+/** @type {Map<string, object>} domain -> ports mapping for redirect */
+const SRV_CACHE = new Map();
 
-// Fallback ports (spec Section 3.2, Step 5)
-const FALLBACK_PORTS = {
-  http: 80,
-  https: 443,
-  ws: 80,
-  wss: 443,
+/** @type {Map<string, object>} domain -> identity mapping */
+const IDENTITY_CACHE = new Map();
+
+const SRV_SERVICES = {
+  http:  '_kirinnet-http._tcp',
+  https: '_kirinnet-https._tcp',
+  ws:    '_kirinnet-ws._tcp',
 };
 
-// ---------------------------------------------------------------------------
-// Load cached ADRP data from chrome.storage.local into memory
-// ---------------------------------------------------------------------------
-
-/**
- * Populate ADRP_CACHE from chrome.storage.local on service worker startup.
- */
-async function loadCache() {
-  const all = await chrome.storage.local.get();
-  for (const [key, entry] of Object.entries(all)) {
-    if (!key.startsWith('aura_dns_cache_')) {
-      continue;
-    }
-    // Skip expired entries
-    const age = Date.now() - entry.timestamp;
-    if (age > entry.ttl) {
-      continue;
-    }
-    const domain = key.replace('aura_dns_cache_', '');
-    ADRP_CACHE.set(domain, entry.ports);
-  }
-}
-
-// Load cache immediately on startup
-loadCache().catch(() => {
-  // If loading fails, the cache is simply empty; requests fall back to defaults.
-});
-
-// ---------------------------------------------------------------------------
-// ADRP Resolution (imported from dns_fetcher.js)
-// ---------------------------------------------------------------------------
-
-// Re-implement the ADRP validation inline (service workers cannot use require)
-const RECOGNIZED_KEYS = new Set(['http', 'https', 'ws', 'wss']);
+const FALLBACK_PORTS = { http: 80, https: 443, ws: 80, wss: 443 };
 const DOH_URL = 'https://1.1.1.1/dns-query';
 const DOH_HEADERS = { 'Accept': 'application/dns-json' };
 const CACHE_TTL = 3600000;
 
-function validateKirinDnsRecord(data) {
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return false;
-  }
-  let recognizedKeyPresent = false;
-  for (const [key, value] of Object.entries(data)) {
-    if (RECOGNIZED_KEYS.has(key)) {
-      recognizedKeyPresent = true;
-      if (!Number.isInteger(value) || value < 1 || value > 65535) {
-        return false;
-      }
+// ---------------------------------------------------------------------------
+// Load cached data from chrome.storage.local into memory
+// ---------------------------------------------------------------------------
+
+async function loadCache() {
+  const all = await chrome.storage.local.get();
+  for (const [key, entry] of Object.entries(all)) {
+    if (Date.now() - entry.timestamp > entry.ttl) continue;
+
+    if (key.startsWith('kirin_srv_') && entry.data) {
+      // key format: kirin_srv_{domain}_{service}
+      const parts = key.replace('kirin_srv_', '').split('_');
+      const service = parts.pop();
+      const domain = parts.join('_');
+      SRV_CACHE.set(`${domain}:${service}`, entry.data);
+    } else if (key.startsWith('kirin_identity_') && entry.data) {
+      const domain = key.replace('kirin_identity_', '');
+      IDENTITY_CACHE.set(domain, entry.data);
     }
   }
-  return recognizedKeyPresent;
 }
 
-function parseKirinDnsTxt(txtValue) {
-  const trimmed = txtValue.trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  return validateKirinDnsRecord(parsed) ? parsed : null;
+loadCache().catch(() => {});
+
+// ---------------------------------------------------------------------------
+// SRV Resolution via DoH (background)
+// ---------------------------------------------------------------------------
+
+function parseIdentityTxt(txt) {
+  if (!txt || !txt.startsWith('id=')) return null;
+  const result = {};
+  txt.split(';').forEach(pair => {
+    const eq = pair.indexOf('=');
+    if (eq === -1) return;
+    result[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim();
+  });
+  if (!result.id || !result.key) return null;
+  if (result.ipfs !== undefined) result.ipfs = result.ipfs === 'true';
+  return result;
 }
 
-/**
- * Resolve ADRP ports for a domain via Cloudflare DoH (in the background).
- * Updates both the in-memory cache and chrome.storage.local.
- * @param {string} domain
- */
-async function resolveKirinDNS(domain) {
-  // If already cached, nothing to do
-  if (ADRP_CACHE.has(domain)) {
-    return;
-  }
+async function resolveSrv(domain, service) {
+  const cacheKey = `${domain}:${service}`;
+  if (SRV_CACHE.has(cacheKey)) return;
 
-  // Mark as "in progress" with a sentinel to avoid duplicate queries
-  ADRP_CACHE.set(domain, null);
+  const srvName = SRV_SERVICES[service];
+  if (!srvName) return;
 
-  const result = { ...FALLBACK_PORTS };
+  // Sentinel to avoid duplicate queries
+  SRV_CACHE.set(cacheKey, null);
 
   try {
-    const url = `${DOH_URL}?name=${encodeURIComponent(domain)}&type=TXT`;
+    const fullName = `${srvName}.${domain}`;
+    const url = `${DOH_URL}?name=${encodeURIComponent(fullName)}&type=SRV`;
     const response = await fetch(url, { headers: DOH_HEADERS });
-
-    if (!response.ok) {
-      ADRP_CACHE.delete(domain);
-      return;
-    }
+    if (!response.ok) { SRV_CACHE.delete(cacheKey); return; }
 
     const dnsJson = await response.json();
-    const answers = dnsJson.Answer || [];
-    let foundValid = false;
+    const answers = (dnsJson.Answer || []).filter(r => r.type === 33);
+    if (answers.length === 0) { SRV_CACHE.delete(cacheKey); return; }
 
-    for (const record of answers) {
-      if (record.type !== 16) {
-        continue;
-      }
-      const txtValue = record.data.join('');
-      const parsed = parseKirinDnsTxt(txtValue);
-      if (parsed !== null) {
-        Object.assign(result, parsed);
-        foundValid = true;
-        break;
-      }
-    }
+    answers.sort((a, b) => {
+      const pa = parseInt(a.data.split(' ')[0]) || 0;
+      const pb = parseInt(b.data.split(' ')[0]) || 0;
+      if (pa !== pb) return pa - pb;
+      return (parseInt(b.data.split(' ')[1]) || 0) - (parseInt(a.data.split(' ')[1]) || 0);
+    });
 
-    if (foundValid) {
-      ADRP_CACHE.set(domain, result);
-      // Persist to chrome.storage.local
-      const cacheKey = `aura_dns_cache_${domain}`;
-      await chrome.storage.local.set({
-        [cacheKey]: {
-          ports: result,
-          timestamp: Date.now(),
-          ttl: CACHE_TTL,
-        },
-      });
-    } else {
-      // No valid ADRP record — remove the sentinel
-      ADRP_CACHE.delete(domain);
-    }
-  } catch (err) {
-    // Network error — remove the sentinel so we can retry later
-    ADRP_CACHE.delete(domain);
+    const parts = answers[0].data.split(' ');
+    const result = {
+      target: (parts[3] || domain).replace(/\.$/, ''),
+      port: parseInt(parts[2]) || FALLBACK_PORTS[service] || 80,
+    };
+
+    SRV_CACHE.set(cacheKey, result);
+    await chrome.storage.local.set({
+      [`kirin_srv_${domain}_${service}`]: {
+        data: result, timestamp: Date.now(), ttl: CACHE_TTL,
+      },
+    });
+  } catch {
+    SRV_CACHE.delete(cacheKey);
   }
 }
 
@@ -170,39 +128,16 @@ async function resolveKirinDNS(domain) {
 // URL Port Injection
 // ---------------------------------------------------------------------------
 
-/**
- * Build a new URL with the ADRP-discovered port injected.
- * Returns null if the port is the default (no redirect needed).
- *
- * @param {URL} url - The original request URL.
- * @param {object} ports - ADRP port mapping.
- * @returns {string|null} The redirect URL, or null if no redirect needed.
- */
-function buildRedirectUrl(url, ports) {
-  // Determine the protocol key
-  const protocolKey = url.protocol === 'https:' ? 'https' : 'http';
+function buildRedirectUrl(url, srvResult) {
+  if (!srvResult) return null;
+  if (srvResult.port === FALLBACK_PORTS[url.protocol === 'https:' ? 'https' : 'http']) return null;
+  if (url.port === String(srvResult.port)) return null;
 
-  // If the key is not in the ADRP result, no redirect
-  if (!Object.prototype.hasOwnProperty.call(ports, protocolKey)) {
-    return null;
+  const redirect = new URL(url.href);
+  redirect.port = srvResult.port;
+  if (srvResult.target !== url.hostname) {
+    redirect.hostname = srvResult.target;
   }
-
-  const targetPort = ports[protocolKey];
-  const defaultPort = FALLBACK_PORTS[protocolKey];
-
-  // If the ADRP port matches the default, no redirect needed
-  if (targetPort === defaultPort) {
-    return null;
-  }
-
-  // If the URL already has the target port, no redirect needed
-  if (url.port === String(targetPort)) {
-    return null;
-  }
-
-  // Construct the redirect URL with the target port
-  const redirect = url.clone();
-  redirect.port = targetPort;
   return redirect.href;
 }
 
@@ -212,54 +147,26 @@ function buildRedirectUrl(url, ports) {
 
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
-    // Only intercept http: and https: requests (spec Section 3.2)
     const url = new URL(details.url);
-    const protocolKey = url.protocol === 'https:' ? 'https' : 'http';
-
-    if (protocolKey !== 'http' && protocolKey !== 'https') {
-      // Not HTTP/HTTPS — let it through
-      return undefined;
-    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
 
     const domain = url.hostname;
-    const cachedPorts = ADRP_CACHE.get(domain);
+    const protocolKey = url.protocol === 'https:' ? 'https' : 'http';
+    const cacheKey = `${domain}:${protocolKey}`;
 
-    if (cachedPorts !== undefined && cachedPorts !== null) {
-      // We have cached ADRP data — check if a redirect is needed
-      const redirectUrl = buildRedirectUrl(url, cachedPorts);
-      if (redirectUrl) {
-        return { redirectUrl };
-      }
-    } else if (cachedPorts === undefined) {
-      // Domain not in cache at all — resolve in the background.
-      // The current request proceeds to the default port; future requests
-      // will benefit from the cached ADRP data.
-      resolveKirinDNS(domain);
+    const cached = SRV_CACHE.get(cacheKey);
+
+    if (cached !== undefined && cached !== null) {
+      const redirectUrl = buildRedirectUrl(url, cached);
+      if (redirectUrl) return { redirectUrl };
+    } else if (cached === undefined) {
+      // Resolve in background; current request proceeds to default port
+      resolveSrv(domain, protocolKey);
     }
-    // cachedPorts === null means "in progress" — let the request proceed.
+    // cached === null means "in progress"
 
-    // No redirect needed (or in progress) — let the request continue
     return undefined;
   },
-  {
-    urls: ['<all_urls>'],
-  },
+  { urls: ['<all_urls>'] },
   ['blocking']
 );
-
-// ---------------------------------------------------------------------------
-// Logging (for development)
-// ---------------------------------------------------------------------------
-
-// Uncomment the following block for debug logging:
-//
-// chrome.webRequest.onBeforeRequest.addListener(
-//   (details) => {
-//     const url = new URL(details.url);
-//     const domain = url.hostname;
-//     const cached = ADRP_CACHE.get(domain);
-//     console.log(`[KirinDNS] Request: ${details.url} | Cache:`, cached);
-//   },
-//   { urls: ['<all_urls>'] },
-//   []
-// );

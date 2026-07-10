@@ -1,14 +1,15 @@
 # KirinNet
-KirinNet：专为 Web3 打造的下一代网络解析协议。基于 SRV 记录智能寻址，无缝兼容传统网络。在 KirinNet 中，域名即身份，无需密码与繁琐注册。构建完全去中心化的内容与通信生态，数据绝对主权，资料随节点完美迁移，彻底告别封号与审查。开源解析库，诚邀浏览器原生接入。
+KirinNet：专为 Web3 打造的下一代网络解析协议。基于 SRV 记录智能寻址 + TXT 身份验证，无缝兼容传统网络。在 KirinNet 中，域名即身份，无需密码与繁琐注册。构建完全去中心化的内容与通信生态，数据绝对主权，资料随节点完美迁移，彻底告别封号与审查。开源解析库，诚邀浏览器原生接入。
 
 # KirinDNS — Port-Aware DNS Resolution for the Modern Web
 
 **The Internet is more than just port 80 and 443.**
 
 KirinDNS (ADRP) is a lightweight DNS-based protocol that lets clients discover
-the actual listening ports of HTTP/HTTPS services through standard DNS TXT
-records. It enables seamless access to services running on non-standard ports
-without requiring users to type port numbers in URLs.
+the actual listening ports of HTTP/HTTPS/WebSocket services through standard
+DNS SRV records, and user identity via DNS TXT records. It enables seamless
+access to services running on non-standard ports without requiring users to
+type port numbers in URLs.
 
 ```
 https://dapp.example.com  ->  automatically resolves to port 8443 via ADRP
@@ -33,21 +34,26 @@ Today, users must know the port number and type it manually:
 
 ### The Solution
 
-ADRP encodes port information in a DNS TXT record:
+ADRP encodes port information in SRV records and identity in TXT records:
 
 ```
-{"http": 8080, "https": 8443}
+; SRV records for service discovery
+_kirinnet-http._tcp.example.com.  IN  SRV  0 0 8080 example.com.
+_kirinnet-https._tcp.example.com. IN  SRV  0 0 8443 example.com.
+
+; TXT record for identity
+id=550e8400-e29b-41d4-a716-446655440000;key=04abc...;nick=Alice
 ```
 
-An ADRP-aware client queries this TXT record before connecting, discovers the
-correct port, and connects transparently. The user simply types:
-`https://gateway.ipfs.example.com` — and it just works.
+An ADRP-aware client queries these records before connecting, discovers the
+correct port via SRV and identity via TXT, then connects transparently.
 
 ### Key Properties
 
-- **Zero infrastructure changes** — uses standard DNS TXT records
-- **Backward compatible** — domains without ADRP TXT records work as before
-- **DNS-layer discovery** — no HTTP round-trip needed for port discovery
+- **Zero infrastructure changes** — uses standard DNS SRV and TXT records
+- **Backward compatible** — domains without KirinDNS SRV records fall back to standard ports
+- **Typed service discovery** — SRV records natively express priority/weight/port
+- **Identity built-in** — TXT records carry user identity (UUID, public key, nickname)
 - **Encrypted DNS** — all ADRP queries use DoH/DoT
 - **No new DNS record types** — no resolver changes needed
 
@@ -154,10 +160,10 @@ KirinDNS_Project/
 The full ADRP specification is available at [`01_Standard/spec_v1.md`](01_Standard/spec_v1.md).
 
 Key points:
-- TXT record format: `{"http": <port>, "https": <port>, "ws": <port>, "wss": <port>}`
-- Ports must be integers in the range 1-65535
-- "First valid" aggregation: the first TXT record that parses as valid ADRP JSON wins
-- Fallback to standard ports (80/443) if TXT is missing or invalid
+- SRV record format: `_kirinnet-{http|https|ws}._tcp.<domain> IN SRV 0 0 <port> <target>.`
+- TXT record format: `id=<uuid>;key=<hex>;nick=<name>;ipfs=<bool>`
+- Fallback to standard ports (80/443) if SRV is missing or invalid
+- Identity is optional — domains without identity TXT work as anonymous services
 - All queries MUST use DNS-over-TLS (DoT) or DNS-over-HTTPS (DoH)
 
 ---

@@ -1,35 +1,36 @@
-# KirinDNS Resolution Protocol (ADRP)
+# KirinDNS Resolution Protocol (ADRP) v2.0
 
 Internet-Draft: KirinDNS Resolution Protocol (ADRP)
 Category: Standards Track
-Expires: 2025-12-31
-Authors: KirinDNS Working Group
+Expires: 2027-01-31
+Authors: KirinNet Working Group
 
 
 ## Abstract
 
-The KirinDNS Resolution Protocol (ADRP) is a lightweight DNS-based discovery
-protocol that conveys transport-layer port information and minimal identity
-metadata via DNS TXT records. It enables clients to discover non-standard
-service ports and a user's unique identifier/nickname for a given domain
-without user intervention, while remaining fully backward-compatible with
-existing DNS infrastructure.
+The KirinDNS Resolution Protocol (ADRP) is a lightweight DNS-based
+discovery protocol that conveys transport-layer port information via DNS
+SRV records and minimal identity metadata via DNS TXT records. It
+enables clients to discover non-standard service ports and user identity
+for a given domain without user intervention, while remaining fully
+backward-compatible with existing DNS infrastructure.
 
 ADRP follows a two-layer architecture:
 
-1. **DNS Layer (ADRP TXT record):** Contains ONLY minimal discovery data —
-   port numbers and a short identity (UUID/DID + nickname). This layer is
-   constrained by the 255-octet TXT record size limit and is designed for
-   fast, universal resolution.
+1. **SRV Layer:** Service port discovery via standard DNS SRV records
+   (RFC 2782). For each supported service protocol (HTTP, HTTPS,
+   WebSocket), a dedicated SRV record advertises the target host and
+   port. This layer provides structured, typed service discovery that
+   existing DNS infrastructure already supports.
 
-2. **Application Layer (Profile Service):** Detailed profile data (bios,
-   avatars, social links, content catalogs) are hosted on a per-user
-   Profile Service — a simple JSON API or static page served on the
-   ADRP-discovered port. Third-party applications fetch the TXT record,
-   resolve the port, then GET `/profile.json` from the Profile Service.
+2. **TXT Layer:** Minimal identity metadata (UUID/DID, public key,
+   nickname) encoded as a semicolon-separated key=value string in a DNS
+   TXT record. This layer is constrained by the TXT record size limit
+   and is designed for fast, universal resolution.
 
-This separation ensures that DNS remains fast and minimal while rich
-application data lives where it belongs: on the user's own server.
+This separation ensures that DNS remains fast and minimal — SRV handles
+typed service discovery natively, while identity lives in the flexible
+TXT space alongside other TXT record uses (SPF, DKIM, DMARC).
 
 ADRP introduces no new DNS record types, no new port numbers, and no
 modifications to A/AAAA resolution. It is strictly additive and operates
@@ -41,22 +42,21 @@ as an orthogonal discovery layer alongside traditional DNS.
     1. Abstract ........................................................ 1
     2. Conventions and Definitions ..................................... 2
     3. Protocol Specification .......................................... 3
-       3.1. Syntax ..................................................... 3
-       3.2. Resolution Process ......................................... 4
-    4. Security Considerations ......................................... 5
-       4.1. DNS Spoofing and Port Hijacking ............................ 5
-       4.2. DNSSEC Integration ......................................... 6
-       4.3. Encrypted DNS Transport (DoT/DoH) .......................... 6
+       3.1. SRV Records — Service Discovery ............................ 3
+       3.2. TXT Record  — Identity Metadata ............................ 4
+       3.3. Resolution Process ......................................... 5
+    4. Security Considerations ......................................... 6
+       4.1. DNS Spoofing and SRV Hijacking ............................. 6
+       4.2. DNSSEC Integration ......................................... 7
+       4.3. Encrypted DNS Transport (DoT/DoH) .......................... 7
        4.4. Port Exhaustion and Denial-of-Service ...................... 7
-       4.5. Mixed-Content Scenarios .................................... 7
     5. Interoperability with Existing Standards ........................ 8
-       5.1. DNS (RFC 1035 / RFC 1034) ................................ 8
-       5.2. HTTP/HTTPS (RFC 7230 / RFC 9110) .......................... 8
+       5.1. DNS (RFC 1035 / RFC 2782) ................................ 8
+       5.2. HTTP/HTTPS (RFC 7230 / RFC 9110) .......................... 9
        5.3. QUIC/HTTP3 (RFC 9000 / RFC 9114) .......................... 9
     6. IANA Considerations ............................................. 9
-       6.1. DNS Record Types ........................................... 9
-       6.2. Port Numbers ............................................... 9
-       6.3. KirinDNS JSON Keys Registry ................................. 9
+       6.1. SRV Service Names .......................................... 9
+       6.2. TXT Record Format .......................................... 10
     7. References ....................................................... 10
 
 
@@ -66,375 +66,309 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
 document are to be interpreted as described in [RFC 2119] and [RFC 8174].
 
-### 2.1. KirinDNS Record
+### 2.1. KirinDNS Resolution
 
-An KirinDNS Record is a DNS TXT record whose RDATA contains a JSON object
-conforming to the ADRP schema defined in Section 3.1. An KirinDNS Record is
-associated with a single domain name (e.g., `example.com`).
+KirinDNS resolution is the process of querying DNS SRV and TXT records
+for a domain to discover: (1) the TCP port on which each KirinNet
+service is listening, and (2) the domain owner's identity metadata.
 
-### 2.2. Resolver
+### 2.2. SRV Service Names
 
-A Resolver is a DNS server that can process ADRP queries. The Resolver
-returns the TXT record(s) for the queried domain. The Resolver MAY be the
-authoritative nameserver for the domain or an upstream recursive resolver.
-ADRP imposes no requirements on Resolver implementation beyond standard TXT
-record handling as defined in [RFC 1035].
+ADRP defines three SRV service names under the `_tcp` protocol:
 
-### 2.3. Client
+| Service   | SRV Name             | Description                    |
+|-----------|----------------------|--------------------------------|
+| HTTP      | `_kirinnet-http._tcp` | HTTP service port              |
+| HTTPS     | `_kirinnet-https._tcp`| HTTPS service port             |
+| WebSocket | `_kirinnet-ws._tcp`   | WebSocket service port         |
 
-A Client is an application (typically a web browser or HTTP client library)
-that performs ADRP resolution. The Client issues a TXT query for the target
-domain, parses the resulting KirinDNS Record, and uses the extracted port
-information to establish the network connection. The Client is responsible
-for implementing the resolution algorithm defined in Section 3.2.
+A Client issues standard SRV queries (RFC 2782) for the relevant service
+name under the target domain name.
 
-### 2.4. Fallback Behavior
+### 2.3. Identity TXT Record
 
-Fallback Behavior refers to the Client's action when an KirinDNS Record is
-missing, malformed, or does not contain the protocol key requested by the
-Client. In this case, the Client MUST fall back to the well-known default
-port for the requested protocol: port 80 for HTTP, port 443 for HTTPS, port
-80 for WS, and port 443 for WSS. Fallback Behavior ensures that ADRP is
-strictly backward-compatible: domains without an KirinDNS Record continue to
-function as before.
+An Identity TXT Record is a DNS TXT record encoded as a semicolon-
+separated key=value string containing minimal identity metadata.
 
-### 2.5. Non-Modification of A/AAAA Records
+### 2.4. Client
 
-ADRP does NOT modify, intercept, or alter A or AAAA record resolution in any
-way. The Client resolves the IP address of the target domain through standard
-A/AAAA queries as defined in [RFC 1035]. ADRP only influences the TCP/UDP
-port used for the subsequent connection. A/AAAA records and ADRP TXT records
-are entirely independent and may be served by different authoritative nameservers.
+A Client is an application (typically a web browser, HTTP client library,
+or KirinNet User Node) that performs KirinDNS resolution. The Client
+issues SRV and TXT queries for the target domain and uses the resulting
+port and identity data to establish connections and verify peers.
+
+### 2.5. Fallback Behavior
+
+If an SRV query returns NXDOMAIN or NOERROR with an empty answer section,
+the Client MUST fall back to the well-known default port for the
+requested protocol: port 80 for HTTP, port 443 for HTTPS. Fallback
+Behavior ensures that ADRP is strictly backward-compatible: domains
+without KirinDNS SRV records continue to function as before.
 
 
 ## 3. Protocol Specification
 
-### 3.1. Syntax
+### 3.1. SRV Records — Service Discovery
 
-#### 3.1.1. JSON Schema
+#### 3.1.1. Record Format
 
-An KirinDNS Record contains a single JSON object with the following schema:
+Each KirinNet service publishes one SRV record per protocol:
 
-```json
-{
-  "http":  <port>,   // OPTIONAL - TCP port for HTTP
-  "https": <port>,   // OPTIONAL - TCP port for HTTPS
-  "ws":    <port>,   // OPTIONAL - TCP port for WebSocket (unencrypted)
-  "wss":   <port>    // OPTIONAL - TCP port for WebSocket (encrypted)
-}
+```
+_kirinnet-http._tcp.<domain>.  IN  SRV  <priority> <weight> <port> <target>.
+_kirinnet-https._tcp.<domain>. IN  SRV  <priority> <weight> <port> <target>.
+_kirinnet-ws._tcp.<domain>.    IN  SRV  <priority> <weight> <port> <target>.
 ```
 
 **Constraints:**
 
-- Each key's value MUST be an integer representing a valid TCP port number
-  in the range 1-65535 (inclusive).
-- Keys MUST be strings. The recognized key names are: `http`, `https`, `ws`,
-  `wss`. Any key not in this set is treated as unknown and ignored.
-- At least one key MUST be present for the record to be considered valid.
-- Duplicate keys MUST NOT appear; if a Client encounters duplicate keys, it
-  MUST treat the entire record as invalid and fall back (see Section 3.2).
-- The JSON MUST be valid UTF-8.
-- The JSON object MUST be the sole content of the TXT record's character
-  string. No additional text, whitespace, or comments may precede or follow
-  the JSON object within the same TXT string.
+- `<priority>` and `<weight>` MUST be valid SRV priority/weight values
+  (0-65535). The RECOMMENDED value for both is 0 (no load balancing).
+- `<port>` MUST be a valid TCP port number in the range 1-65535.
+- `<target>` MUST be a valid domain name, typically the same as the
+  queried domain. It MUST resolve to a valid A/AAAA record.
+- Wildcard SRV records (`*.<domain>`) are NOT RECOMMENDED. Each domain
+  SHOULD publish explicit SRV records.
 
 **Examples:**
 
-```json
-// Standard case: non-standard HTTP and HTTPS ports
-{"http": 8080, "https": 8443}
+```
+; Single-node setup, all services on the same host
+_kirinnet-http._tcp.alice.kirinnet.org.  IN  SRV  0 0 8080 alice.kirinnet.org.
+_kirinnet-https._tcp.alice.kirinnet.org. IN  SRV  0 0 8443 alice.kirinnet.org.
+_kirinnet-ws._tcp.alice.kirinnet.org.    IN  SRV  0 0 8082 alice.kirinnet.org.
 
-// HTTPS only
-{"https": 8443}
-
-// All four protocols
-{"http": 8080, "https": 8443, "ws": 8080, "wss": 8443}
+; Multi-node setup, services on different hosts
+_kirinnet-http._tcp.example.com.  IN  SRV  0 0 3000 node1.example.com.
+_kirinnet-https._tcp.example.com. IN  SRV  0 0 3443 node1.example.com.
+_kirinnet-ws._tcp.example.com.    IN  SRV  0 0 8082 node2.example.com.
 ```
 
-#### 3.1.2. Multiple TXT Records
+#### 3.1.2. Service Not Present
 
-A domain MAY have multiple TXT records. ADRP defines the following aggregation
-strategy:
+A domain MAY publish SRV records for a subset of services. For example,
+a domain that only exposes HTTPS may omit the `_kirinnet-http._tcp` and
+`_kirinnet-ws._tcp` records. If a Client queries for a service not
+present, it MUST fall back to the standard port (see Section 3.3).
 
-1. The Client MUST retrieve ALL TXT records for the queried domain.
-2. The Client MUST attempt to parse each TXT record as a JSON object
-   independently, starting with the first record in the response set.
-3. The first TXT record that parses as valid JSON and conforms to the ADRP
-   schema is used as the ADRP response. Subsequent TXT records are ignored
-   for ADRP purposes.
-4. If no TXT record in the response set is a valid ADRP record, the Client
-   MUST fall back to the default port (see Section 3.2).
+### 3.2. TXT Record — Identity Metadata
 
-This "first valid" strategy ensures that a domain can coexist with other TXT
-record uses (e.g., SPF, DKIM, DMARC) without ADRP misinterpreting those
-records. SPF records, for example, begin with `v=spf1` and will fail JSON
-parsing, so they will be skipped.
+#### 3.2.1. Format
 
-### 3.2. Resolution Process
+The identity TXT record uses a semicolon-separated key=value format:
 
-The ADRP resolution process is executed by the Client as follows:
+```
+id=<uuid>;key=<hex_public_key>;nick=<nickname>[;ipfs=<bool>]
+```
+
+**Fields:**
+
+| Key     | Required | Description                                          |
+|---------|----------|------------------------------------------------------|
+| `id`    | REQUIRED | Unique identifier (UUID v4 or DID format)             |
+| `key`   | REQUIRED | Hex-encoded long-term public key (e.g., secp256k1)   |
+| `nick`  | OPTIONAL | Human-readable display name                          |
+| `ipfs`  | OPTIONAL | Boolean (`true`/`false`) indicating IPFS gateway     |
+
+**Constraints:**
+
+- All values MUST be percent-encoded if they contain semicolons or
+  equals signs. Values SHOULD avoid these characters when possible.
+- `id` MUST be unique across the KirinNet network.
+- `key` MUST be the hex-encoded uncompressed public key without a `0x`
+  prefix. The RECOMMENDED key type is secp256k1 (65 bytes → 130 hex chars).
+- `nick` SHOULD be at most 64 characters.
+- Fields MAY appear in any order.
+- Unknown keys are silently ignored by the Client.
+
+**Examples:**
+
+```
+; Full identity record
+id=550e8400-e29b-41d4-a716-446655440000;key=04a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6;nick=Alice;ipfs=false
+
+; Minimal record (only required fields)
+id=660e8400-e29b-41d4-a716-446655440001;key=04b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+```
+
+#### 3.2.2. Coexistence with Other TXT Records
+
+The identity TXT record is placed alongside other TXT records (SPF,
+DKIM, DMARC). The Client MUST identify the KirinDNS identity record by
+scanning TXT records for the `id=` and `key=` prefixes. The first TXT
+record whose value starts with `id=` and contains at least the `key=`
+field is the identity record.
+
+A domain MAY have at most ONE identity TXT record. If multiple TXT
+records match the identity format, the Client SHOULD use the first one
+encountered.
+
+### 3.3. Resolution Process
+
+The ADRP resolution process is executed by the Client as follows.
+
+#### 3.3.1. Service Port Resolution (SRV)
+
+**Step 1 — Issue SRV Query**
+
+The Client issues a standard DNS SRV query (RFC 2782) for the relevant
+service name under the target domain, using an encrypted DNS transport
+(DoT or DoH; see Section 4.3).
+
+Example: to discover the WebSocket port for `alice.kirinnet.org`, query:
+`_kirinnet-ws._tcp.alice.kirinnet.org.  IN  SRV`
+
+**Step 2 — Parse SRV Response**
+
+If the query returns a valid SRV record set, the Client extracts the
+target hostname and port from the record with the lowest priority (and
+within that priority, the highest weight) as defined in RFC 2782.
+
+If the query returns NXDOMAIN or NOERROR with an empty answer section,
+the Client proceeds to Step 4 (Fallback).
+
+**Step 3 — Extract Port**
+
+The Client uses the port from the resolved SRV record. The target
+hostname MAY differ from the queried domain; if it does, the Client MUST
+resolve the target hostname via A/AAAA before connecting.
+
+**Step 4 — Fallback**
+
+If no SRV record is found for the requested service, the Client falls
+back to the standard port for that service:
+
+| Service      | Fallback Port |
+|--------------|---------------|
+| HTTP         | 80            |
+| HTTPS        | 443           |
+| WebSocket    | 80            |
+| WSS          | 443           |
+
+**Step 5 — Establish Connection**
+
+The Client resolves the A/AAAA record for the target hostname (SRV
+target or original domain) and establishes a TCP connection to the
+resolved IP address and port.
+
+#### 3.3.2. Identity Resolution (TXT)
 
 **Step 1 — Issue TXT Query**
 
-The Client issues a DNS TXT query for the target domain (e.g., `example.com`)
-using an encrypted DNS transport (DoT or DoH; see Section 4.3). The query is
-a standard DNS TXT query as defined in [RFC 1035].
+The Client issues a standard DNS TXT query for the target domain using
+an encrypted DNS transport.
 
-**Step 2 — Retrieve TXT Records**
+**Step 2 — Scan for Identity Record**
 
-The Resolver returns zero or more TXT records. If the query returns NXDOMAIN
-or NOERROR with an empty answer section, the Client proceeds to Step 5
-(Fallback).
+The Client iterates through all returned TXT records. For each record,
+it checks whether the value begins with `id=` and contains a `key=`
+field. The first such record is the identity record.
 
-**Step 3 — Aggregate and Parse**
+**Step 3 — Parse Identity**
 
-The Client applies the aggregation strategy from Section 3.1.2:
-- Iterates through TXT records in order.
-- Attempts to parse each as JSON.
-- Selects the first valid ADRP record.
-- If no valid record is found, proceeds to Step 5 (Fallback).
+The Client splits the record value on semicolons (`;`) and parses each
+segment as `key=value`. Recognized keys are extracted into an identity
+object. Unknown keys are silently ignored.
 
-**Step 4 — Extract Port**
-
-From the selected ADRP record, the Client extracts the port value corresponding
-to the requested protocol key:
-
-- If the Client is establishing an HTTP connection, it looks for the `http` key.
-- If the Client is establishing an HTTPS connection, it looks for the `https` key.
-- If the Client is establishing a WS connection, it looks for the `ws` key.
-- If the Client is establishing a WSS connection, it looks for the `wss` key.
-
-If the key is present and the value is a valid port (integer, 1-65535), the
-Client uses that port. If the key is absent, the Client proceeds to Step 5.
-
-**Step 5 — Fallback**
-
-If the key is absent, the JSON is invalid, or no TXT record was found, the
-Client falls back to the standard port:
-
-| Protocol | Fallback Port |
-|----------|---------------|
-| HTTP     | 80            |
-| HTTPS    | 443           |
-| WS       | 80            |
-| WSS      | 443           |
-
-**Step 6 — Establish Connection**
-
-The Client resolves the A/AAAA record for the target domain (standard DNS
-resolution) and establishes a TCP/UDP connection to the resolved IP address
-and port (from Step 4 or Step 5).
+If no identity TXT record is found, the Client proceeds with a null
+identity (no peer verification via KirinDNS identity).
 
 
 ## 4. Security Considerations
 
-### 4.1. DNS Spoofing and Port Hijacking
+### 4.1. DNS Spoofing and SRV Hijacking
 
-ADRP introduces a new attack surface: if an attacker can inject or modify the
-TXT record for a domain, they can redirect the Client to an arbitrary port.
-This is analogous to DNS cache poisoning for A records, but with a narrower
-impact (port redirection rather than full IP redirection).
-
-**Attack scenario:** An attacker performs a DNS spoofing attack, injecting a
-fake TXT record for `bank.example.com` with `{"https": 9999}`. The Client,
-believing the ADRP record, connects to port 9999 on the legitimate server IP
-(addressed via A/AAAA). If the attacker also controls port 9999 on a
-compromised machine at the same IP, or if the attacker can influence routing,
-this could lead to a man-in-the-middle attack.
+An attacker who can inject or modify the SRV record for a domain can
+redirect the Client to an arbitrary port and target host. This is
+analogous to DNS cache poisoning for A records but potentially more
+dangerous because it can fully redirect both host and port.
 
 **Mitigations:**
 
-1. **DNSSEC (Section 4.2):** The primary defense. ADRP TXT records MUST be
-   covered by DNSSEC signatures. The Client SHOULD validate DNSSEC signatures
-   on ADRP responses before trusting the port information.
-2. **Encrypted DNS transport (Section 4.3):** DoT or DoH prevents on-path
-   adversaries from reading or modifying the query/response.
-3. **Certificate validation:** For HTTPS and WSS, the Client MUST validate
-   the TLS certificate regardless of the port. A port change does not relax
-   certificate requirements.
+1. **DNSSEC (Section 4.2):** The primary defense. ADRP SRV and TXT
+   records MUST be covered by DNSSEC signatures.
+2. **Encrypted DNS transport (Section 4.3):** DoT or DoH prevents
+   on-path adversaries from reading or modifying the query/response.
+3. **Certificate validation:** For HTTPS connections, the Client MUST
+   validate the TLS certificate regardless of the SRV-discovered port
+   or target hostname. The certificate's Subject Alternative Name (SAN)
+   MUST match the original domain, NOT the SRV target.
 
 ### 4.2. DNSSEC Integration
 
-ADRP TXT records SHOULD be signed under DNSSEC. The domain owner MUST include
-the KirinDNS TXT record in the zone's RRSIG coverage.
+ADRP SRV and TXT records SHOULD be signed under DNSSEC. When a Client
+supports DNSSEC validation, it SHOULD reject ADRP responses that fail
+DNSSEC validation. If DNSSEC validation fails, the Client has two
+options:
 
-When a Client supports DNSSEC validation (via DoT with DNSSEC support, or
-DoH with DNSSEC support), it SHOULD reject ADRP responses that fail DNSSEC
-validation. If DNSSEC validation fails for the ADRP record, the Client has
-two options:
-
-1. **Fallback mode (RECOMMENDED):** Treat the ADRP record as invalid and
-   fall back to the standard port. This preserves connectivity while
-   avoiding unverified port redirection.
-2. **Strict mode (OPTIONAL):** Abort the connection entirely and report an
-   error to the user. This is appropriate for high-security contexts (e.g.,
-   banking, healthcare).
-
-A Client MAY allow the domain operator to signal the preferred mode via a
-future extension to the ADRP schema (e.g., an `adrp-strict` flag).
+1. **Fallback mode (RECOMMENDED):** Treat the ADRP records as invalid
+   and fall back to the standard port. This preserves connectivity.
+2. **Strict mode (OPTIONAL):** Abort the connection entirely and report
+   an error. Appropriate for high-security contexts.
 
 ### 4.3. Encrypted DNS Transport (DoT/DoH)
 
-ADRP TXT queries MUST be sent over an encrypted DNS transport:
-
-- **DNS-over-TLS (DoT)** as defined in [RFC 7858], or
-- **DNS-over-HTTPS (DoH)** as defined in [RFC 8484]
-
-Unencrypted DNS (UDP/TCP port 53) MUST NOT be used for ADRP queries, as it
-allows trivial interception and modification of port information.
-
-A Client that can only perform unencrypted DNS queries SHOULD fall back to
-the standard port rather than attempt ADRP resolution. This ensures that a
-lack of encrypted DNS support does not expose the Client to port hijacking.
+ADRP SRV and TXT queries MUST be sent over an encrypted DNS transport:
+DNS-over-TLS (DoT) as defined in [RFC 7858], or DNS-over-HTTPS (DoH) as
+defined in [RFC 8484]. Unencrypted DNS (UDP/TCP port 53) MUST NOT be
+used for ADRP queries.
 
 ### 4.4. Port Exhaustion and Denial-of-Service
 
-An attacker who controls (or compromises) a domain's DNS could set the ADRP
-port to a rapidly changing value, forcing Clients to attempt connections to
-random ports. This could:
+An attacker who controls a domain's DNS could set the SRV port to a
+rapidly changing value, forcing Clients to attempt connections to random
+ports. Mitigations:
 
-- Cause connection timeouts, consuming Client resources.
-- Flood the server with connection attempts on random ports if the Client
-  retries.
-
-**Mitigations:**
-
-1. **Rate limiting:** The Client SHOULD implement rate limiting on ADRP
-   queries. If the same domain is queried more than N times per time window
-   (e.g., 10 times per 60 seconds), the Client SHOULD cache the previous
-   ADRP response for the duration of the window rather than issuing new
-   queries.
-2. **Connection timeout:** The Client MUST apply a reasonable connection
-   timeout (RECOMMENDED: 10 seconds) when connecting to ADRP-discovered
-   ports. If the connection fails, the Client SHOULD fall back to the
-   standard port rather than retrying the ADRP-discovered port.
-3. **Caching:** ADRP responses SHOULD be cached for the duration of the TXT
-   record's TTL. Clients MUST respect the TTL value.
-
-### 4.5. Mixed-Content Scenarios
-
-A domain may publish an ADRP record where the `http` port and `https` port
-differ. For example:
-
-```json
-{"http": 8080, "https": 8443}
-```
-
-A Client navigating to `https://example.com` will connect to port 8443.
-If the page loaded from port 8443 makes a subresource request to
-`http://example.com/resource.js`, the Client will resolve the ADRP record
-again and connect to port 8080 for that subresource.
-
-**Security implications:**
-
-- A page loaded over HTTPS (port 8443) that loads resources over HTTP
-  (port 8080) creates a classic mixed-content vulnerability. The Client
-  SHOULD handle this according to standard mixed-content policies as defined
-  in [RFC 9110] and browser security standards.
-- The Client MUST NOT upgrade an HTTP subresource request to HTTPS based
-  solely on the presence of an `https` key in the ADRP record. Protocol
-  selection is determined by the URL scheme, not the ADRP record.
-- If a Client is configured with strict mixed-content blocking, it SHOULD
-  block HTTP subresources regardless of the ADRP-discovered port.
+1. **Rate limiting:** The Client SHOULD implement rate limiting on SRV
+   queries (e.g., 10 queries per domain per 60 seconds).
+2. **Connection timeout:** RECOMMENDED: 10 seconds. On failure, fall
+   back to standard port.
+3. **Caching:** ADRP SRV responses SHOULD be cached for the SRV
+   record's TTL.
 
 
 ## 5. Interoperability with Existing Standards
 
-### 5.1. DNS (RFC 1035 / RFC 1034)
+### 5.1. DNS (RFC 1035 / RFC 2782)
 
-ADRP operates entirely within the existing DNS framework. It uses only the
-TXT record type as defined in [RFC 1035] and follows the DNS concepts and
-terminology defined in [RFC 1034]. ADRP imposes no requirements on DNS
-implementation beyond standard TXT record support.
-
-Key compatibility points:
-
-- ADRP TXT records coexist with other TXT records (SPF, DKIM, DMARC, etc.)
-  on the same domain. Clients use the aggregation strategy in Section 3.1.2
-  to identify ADRP records.
-- ADRP does not require any changes to DNS servers, resolvers, or
-  authoritative nameservers.
-- ADRP does not introduce new DNS record types, opcodes, or response codes.
+ADRP uses standard SRV records [RFC 2782] for service discovery and TXT
+records [RFC 1035] for identity metadata. No new DNS record types,
+opcodes, or response codes are required. Existing authoritative
+nameservers and recursive resolvers require no modifications.
 
 ### 5.2. HTTP/HTTPS (RFC 7230 / RFC 9110)
 
-ADRP only influences the initial connection setup — specifically, which TCP
-port the Client connects to. Once the connection is established, the
-application-layer protocol (HTTP/1.1, HTTP/2, HTTP/3) operates normally.
-
-Key compatibility points:
-
-- The `Host` header in HTTP requests is unaffected by ADRP. The Client
-  sends `Host: example.com` regardless of whether the connection was made to
-  port 80 or port 8080.
-- ADRP does not modify the HTTP/1.1 semantics defined in [RFC 7230] or the
-  HTTP semantics defined in [RFC 9110].
-- ADRP does not affect HTTP/2 or HTTP/3 protocol behavior. The ALPN
-  negotiation proceeds normally after the TCP connection is established.
-- A domain using ADRP with non-standard ports is indistinguishable from a
-  domain using standard ports at the HTTP protocol level.
+ADRP only influences the initial connection setup — specifically, which
+TCP port and target host the Client connects to. Once the connection is
+established, the application-layer protocol operates normally. The
+`Host` header in HTTP requests MUST carry the original domain, not the
+SRV target hostname.
 
 ### 5.3. QUIC/HTTP3 (RFC 9000 / RFC 9114)
 
-QUIC (and HTTP/3) uses UDP port 443 by convention. ADRP does not define a
-dedicated key for QUIC, as QUIC shares the same port as HTTPS.
-
-**Behavior when ADRP specifies a non-standard HTTPS port:**
-
-If a domain's ADRP record contains `"https": 8443`, a QUIC-capable Client
-has two options:
-
-1. **QUIC-first approach (RECOMMENDED):** The Client first attempts a QUIC
-   connection to the ADRP-discovered HTTPS port (e.g., UDP port 8443). If
-   the QUIC connection succeeds, it is used for HTTP/3. If it fails, the
-   Client falls back to TCP to the same port for HTTP/1.1 or HTTP/2.
-2. **Separate ports:** The domain operator MAY configure QUIC and TCP/HTTPS
-   on the same port (recommended) or different ports. If different ports are
-   needed, a future ADRP extension could introduce a `quic` key. However,
-   this is not defined in this version of the specification.
-
-**Default QUIC port fallback:** If no ADRP record is present or the `https`
-key is absent, the Client uses UDP port 443 for QUIC, consistent with
-[RFC 9000].
-
-**Important:** A Client MUST NOT assume that the TCP port specified for
-`https` is the same as the UDP port for QUIC. If the ADRP-discovered HTTPS
-port is non-standard, the Client SHOULD attempt QUIC on that same port
-first, and if that fails, fall back to the standard QUIC port (443).
+ADRP does not define a dedicated SRV service name for QUIC. Clients
+MUST use the standard QUIC port (UDP 443) or attempt QUIC on the
+HTTPS SRV-discovered port. A future extension may add a
+`_kirinnet-quic._udp` SRV service name.
 
 
 ## 6. IANA Considerations
 
-### 6.1. DNS Record Types
+### 6.1. SRV Service Names
 
-ADRP uses the existing TXT record type as defined in [RFC 1035]. No new DNS
-record types are required or registered by this specification.
+IANA is requested to register the following SRV service names under the
+`_tcp` protocol:
 
-### 6.2. Port Numbers
+| Service Name          | Transport | Description              | Reference     |
+|-----------------------|-----------|--------------------------|---------------|
+| `_kirinnet-http`      | TCP       | KirinNet HTTP service     | [this document]|
+| `_kirinnet-https`     | TCP       | KirinNet HTTPS service    | [this document]|
+| `_kirinnet-ws`        | TCP       | KirinNet WebSocket service| [this document]|
 
-ADRP does not register any new port numbers. It only enables Clients to
-discover port numbers dynamically from DNS TXT records. Port numbers used in
-ADRP records are chosen by the domain operator and may be any valid port
-(1-65535).
+### 6.2. TXT Record Format
 
-### 6.3. KirinDNS JSON Keys Registry
-
-IANA is requested to establish an "KirinDNS JSON Keys" registry. This
-registry will track the JSON key names recognized by ADRP clients.
-
-The initial registry entries are:
-
-| Key     | Description                                    | RFC        |
-|---------|------------------------------------------------|------------|
-| http    | TCP port for HTTP                              | [This spec]|
-| https   | TCP port for HTTPS                             | [This spec]|
-| ws      | TCP port for WebSocket (unencrypted)           | [This spec]|
-| wss     | TCP port for WebSocket (encrypted)             | [This spec]|
-
-Future extensions to ADRP that introduce new keys (e.g., `quic` for QUIC
-port, `grpc` for gRPC port) MUST be registered in this registry. The
-registration policy is "Expert Review" — one or more IANA-appointed experts
-will review new key registrations for consistency and interoperability.
+No new IANA registries are required. The identity TXT record format is
+defined within this specification only.
 
 
 ## 7. References
@@ -450,35 +384,21 @@ will review new key registrations for consistency and interoperability.
 [RFC 2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement
            Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997.
 
-[RFC 7230] Fielding, R., et al., "Hypertext Transfer Protocol (HTTP/1.1):
-           Message Syntax and Routing", RFC 7230, DOI 10.17487/RFC7230,
-           June 2014.
+[RFC 2782] Gulbrandsen, A., Vixie, P., and L. Esibov, "A DNS RR for
+           specifying the location of services (DNS SRV)", RFC 2782,
+           DOI 10.17487/RFC2782, February 2000.
 
 [RFC 7858] Hu, Z., et al., "Specification for DNS over Transport Layer
            Security (TLS)", RFC 7858, DOI 10.17487/RFC7858, April 2016.
 
-[RFC 8484] Hu, Z., Palombini, C., Weiler, S., and S. Bellovin, "DNS Queries
-           over HTTPS (DoH)", RFC 8484, DOI 10.17487/RFC8484, October 2018.
-
 [RFC 8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119
            Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017.
+
+[RFC 8484] Hu, Z., Palombini, C., Weiler, S., and S. Bellovin, "DNS Queries
+           over HTTPS (DoH)", RFC 8484, DOI 10.17487/RFC8484, October 2018.
 
 [RFC 9000] Iyengar, J. and M. Thomson, "QUIC: A UDP-Based Multiplexed and
            Secure Transport", RFC 9000, DOI 10.17489/RFC9000, May 2021.
 
 [RFC 9110] Fielding, R. and M. Hadley, "HTTP Semantics", RFC 9110,
            DOI 10.17489/RFC9110, June 2022.
-
-[RFC 9114] Bishop, M., "HTTP/3", RFC 9114, DOI 10.17489/RFC9114, June 2022.
-
-### Informative References
-
-[RFC 4408] Kitterman, S., "SPF: Sender Policy Framework",
-           RFC 4408, DOI 10.17487/RFC4408, April 2006.
-
-[RFC 6376] Kucherawy, M. and M. Levine, "DomainKeys Identified Mail (DKIM)
-           Signatures", RFC 6376, DOI 10.17487/RFC6376, September 2011.
-
-[RFC 7489] Kitterman, S., et al., "Domain-based Message Authentication,
-           Reporting, and Conformance (DMARC)", RFC 7489, DOI 10.17487/RFC7489,
-           March 2015.

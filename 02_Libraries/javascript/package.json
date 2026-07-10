@@ -1,0 +1,25 @@
+{
+  "name": "kirin-dns",
+  "version": "0.1.0",
+  "description": "KirinDNS (ADRP) — Port-aware DNS resolution client library",
+  "main": "kirin_dns.js",
+  "types": "kirin_dns.d.ts",
+  "files": [
+    "kirin_dns.js",
+    "kirin_dns.d.ts"
+  ],
+  "keywords": ["dns", "adrp", "kirindns", "port-discovery", "web3"],
+  "author": "kirin-yucall <kirin.yucall@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kirin-yucall/KirinNet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kirin-yucall/KirinNet/issues"
+  },
+  "homepage": "https://github.com/kirin-yucall/KirinNet",
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,5 +1,5 @@
 /**
- * KirinDNS — JavaScript Library Tests
+ * KirinDNS v2.0 -- JavaScript Library Tests
  *
  * Run with: npx jest
  *
@@ -9,217 +9,210 @@
 
 const dns = require('dns');
 
-// Import the library (adjust path as needed)
-const { resolve_kirin_dns } = require('../aura_dns');
-
-// We need to re-export the internal functions for testing.
-// Since aura_dns.js only exports resolve_kirin_dns, we re-implement
-// the validation here for testing purposes, matching the spec.
-
-const RECOGNIZED_KEYS = new Set(['http', 'https', 'ws', 'wss']);
-const FALLBACK_PORTS = { http: 80, https: 443, ws: 80, wss: 443 };
-
-function validateKirinDnsRecord(data) {
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return false;
-  }
-  let recognizedKeyPresent = false;
-  for (const [key, value] of Object.entries(data)) {
-    if (RECOGNIZED_KEYS.has(key)) {
-      recognizedKeyPresent = true;
-      if (!Number.isInteger(value) || value < 1 || value > 65535) {
-        return false;
-      }
-    }
-  }
-  return recognizedKeyPresent;
-}
+// Import the library
+const {
+  resolveService,
+  resolveAllServices,
+  resolveIdentity,
+  resolve_kirin_dns,
+  parseIdentityTxt,
+  SRV_SERVICES,
+  FALLBACK_PORTS,
+} = require('../kirin_dns');
 
 // ---------------------------------------------------------------------------
-// Validation tests
+// Identity TXT Parser Tests
 // ---------------------------------------------------------------------------
 
-describe('validateKirinDnsRecord', () => {
-  test('valid http + https', () => {
-    expect(validateKirinDnsRecord({ http: 8080, https: 8443 })).toBe(true);
+describe('parseIdentityTxt', () => {
+  test('full identity record', () => {
+    const result = parseIdentityTxt(
+      'id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false'
+    );
+    expect(result.id).toBe('550e8400-e29b-41d4-a716-446655440000');
+    expect(result.key).toBe('04abc');
+    expect(result.nick).toBe('Alice');
+    expect(result.ipfs).toBe(false);
   });
 
-  test('valid single key', () => {
-    expect(validateKirinDnsRecord({ https: 443 })).toBe(true);
+  test('ipfs=true parsed as boolean', () => {
+    const result = parseIdentityTxt('id=test;key=04;ipfs=true');
+    expect(result.ipfs).toBe(true);
   });
 
-  test('valid all four keys', () => {
-    expect(validateKirinDnsRecord({ http: 8080, https: 8443, ws: 8080, wss: 8443 })).toBe(true);
+  test('minimal identity (only id + key)', () => {
+    const result = parseIdentityTxt('id=minimal;key=0x00');
+    expect(result.id).toBe('minimal');
+    expect(result.key).toBe('0x00');
+    expect(result.nick).toBeUndefined();
   });
 
-  test('invalid port zero', () => {
-    expect(validateKirinDnsRecord({ ws: 0 })).toBe(false);
+  test('SPF record skipped', () => {
+    expect(parseIdentityTxt('v=spf1 include:_spf.example.com')).toBeNull();
   });
 
-  test('invalid port too high', () => {
-    expect(validateKirinDnsRecord({ ws: 65536 })).toBe(false);
+  test('empty string returns null', () => {
+    expect(parseIdentityTxt('')).toBeNull();
   });
 
-  test('invalid port string', () => {
-    expect(validateKirinDnsRecord({ ws: '80' })).toBe(false);
+  test('missing key returns null', () => {
+    expect(parseIdentityTxt('id=nokey')).toBeNull();
   });
 
-  test('invalid no recognized key', () => {
-    expect(validateKirinDnsRecord({ unknown: 80 })).toBe(false);
+  test('missing id returns null', () => {
+    expect(parseIdentityTxt('key=noid')).toBeNull();
   });
 
-  test('invalid empty object', () => {
-    expect(validateKirinDnsRecord({})).toBe(false);
+  test('whitespace around values trimmed', () => {
+    const result = parseIdentityTxt('id= test ;key= 04abc ;nick= Alice ');
+    expect(result.id).toBe('test');
+    expect(result.key).toBe('04abc');
+    expect(result.nick).toBe('Alice');
   });
 
-  test('invalid not object', () => {
-    expect(validateKirinDnsRecord('not an object')).toBe(false);
-  });
-
-  test('invalid null', () => {
-    expect(validateKirinDnsRecord(null)).toBe(false);
-  });
-
-  test('invalid array', () => {
-    expect(validateKirinDnsRecord([1, 2])).toBe(false);
-  });
-
-  test('unknown key ignored with valid key', () => {
-    expect(validateKirinDnsRecord({ https: 443, custom: 'anything' })).toBe(true);
-  });
-
-  test('port boundary low', () => {
-    expect(validateKirinDnsRecord({ http: 1 })).toBe(true);
-  });
-
-  test('port boundary high', () => {
-    expect(validateKirinDnsRecord({ http: 65535 })).toBe(true);
+  test('unknown keys ignored', () => {
+    const result = parseIdentityTxt('id=test;key=04;custom=ignored');
+    expect(result.id).toBe('test');
+    expect(result.key).toBe('04');
+    expect(result.custom).toBe('ignored');
   });
 });
 
 // ---------------------------------------------------------------------------
-// DNS resolution tests (mocked)
+// SRV Service Resolution Tests (mocked)
 // ---------------------------------------------------------------------------
 
-describe('resolve_kirin_dns', () => {
+describe('resolveService', () => {
+  beforeEach(() => {
+    jest.spyOn(dns, 'resolveSrv').mockRestore();
+  });
+
+  test('resolves WS service via SRV', async () => {
+    dns.resolveSrv.mockResolvedValue([
+      { name: 'alice.kirinnet.org', port: 8082, priority: 0, weight: 0 },
+    ]);
+
+    const result = await resolveService('alice.kirinnet.org', 'ws');
+    expect(result).toEqual({ target: 'alice.kirinnet.org', port: 8082 });
+  });
+
+  test('SRV returns null for nonexistent domain', async () => {
+    dns.resolveSrv.mockRejectedValue(new Error('ENOTFOUND'));
+
+    const result = await resolveService('nonexistent.invalid', 'ws');
+    expect(result).toBeNull();
+  });
+
+  test('SRV returns null for empty answer', async () => {
+    dns.resolveSrv.mockResolvedValue([]);
+
+    const result = await resolveService('example.com', 'http');
+    expect(result).toBeNull();
+  });
+
+  test('throws on unknown service', async () => {
+    await expect(resolveService('example.com', 'unknown'))
+      .rejects.toThrow('Unknown service');
+  });
+
+  test('RFC 2782: lowest priority selected', async () => {
+    dns.resolveSrv.mockResolvedValue([
+      { name: 'high-prio.kirinnet.org', port: 9000, priority: 5, weight: 0 },
+      { name: 'low-prio.kirinnet.org',  port: 8080, priority: 1, weight: 0 },
+      { name: 'mid-prio.kirinnet.org',  port: 3000, priority: 3, weight: 0 },
+    ]);
+
+    const result = await resolveService('example.com', 'http');
+    expect(result.target).toBe('low-prio.kirinnet.org');
+    expect(result.port).toBe(8080);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Identity Resolution Tests (mocked)
+// ---------------------------------------------------------------------------
+
+describe('resolveIdentity', () => {
   beforeEach(() => {
     jest.spyOn(dns, 'resolveTxt').mockRestore();
   });
 
-  test('valid ADRP TXT record returns correct ports', async () => {
+  test('resolves identity from TXT', async () => {
     dns.resolveTxt.mockResolvedValue([
-      ['v=spf1 include:example.com -all'],  // SPF — skipped
-      ['{"http": 8080, "https": 8443}'],    // ADRP — used
+      ['v=spf1 -all'],
+      ['id=550e8400;key=04abc;nick=Alice'],
     ]);
 
-    const result = await resolve_kirin_dns('example.com');
-    expect(result.http).toBe(8080);
-    expect(result.https).toBe(8443);
+    const result = await resolveIdentity('alice.kirinnet.org');
+    expect(result.id).toBe('550e8400');
+    expect(result.key).toBe('04abc');
+    expect(result.nick).toBe('Alice');
   });
 
-  test('ENOTFOUND returns fallback ports', async () => {
-    dns.resolveTxt.mockRejectedValue(new dns.EOFError('ENOTFOUND'));
-
-    const result = await resolve_kirin_dns('nonexistent.invalid');
-    expect(result).toEqual({ http: 80, https: 443, ws: 80, wss: 443 });
-  });
-
-  test('malformed TXT records return fallback', async () => {
+  test('returns null when no identity TXT', async () => {
     dns.resolveTxt.mockResolvedValue([
-      ['v=spf1 include:example.com -all'],  // SPF
-      ['not json at all'],                   // malformed
+      ['v=spf1 -all'],
+      ['v=DKIM1; k=rsa; p=...'],
     ]);
 
-    const result = await resolve_kirin_dns('example.com');
-    expect(result).toEqual({ http: 80, https: 443, ws: 80, wss: 443 });
+    const result = await resolveIdentity('example.com');
+    expect(result).toBeNull();
   });
 
-  test('partial ADRP record: http falls back to 80', async () => {
-    dns.resolveTxt.mockResolvedValue([
-      ['{"https": 8443}'],
-    ]);
+  test('returns null for NXDOMAIN', async () => {
+    dns.resolveTxt.mockRejectedValue(new Error('ENOTFOUND'));
 
-    const result = await resolve_kirin_dns('example.com');
-    expect(result.http).toBe(80);   // fallback
-    expect(result.https).toBe(8443);
-  });
-
-  test('first valid record wins', async () => {
-    dns.resolveTxt.mockResolvedValue([
-      ['{"http": 9090, "https": 9443}'],  // first — used
-      ['{"http": 1111}'],                   // second — ignored
-    ]);
-
-    const result = await resolve_kirin_dns('example.com');
-    expect(result.http).toBe(9090);
-    expect(result.https).toBe(9443);
-  });
-
-  test('all four protocols', async () => {
-    dns.resolveTxt.mockResolvedValue([
-      ['{"http": 8080, "https": 8443, "ws": 8080, "wss": 8443}'],
-    ]);
-
-    const result = await resolve_kirin_dns('example.com');
-    expect(result).toEqual({ http: 8080, https: 8443, ws: 8080, wss: 8443 });
-  });
-
-  test('network error returns fallback', async () => {
-    dns.resolveTxt.mockRejectedValue(new Error('network error'));
-
-    const result = await resolve_kirin_dns('example.com');
-    expect(result).toEqual({ http: 80, https: 443, ws: 80, wss: 443 });
+    const result = await resolveIdentity('nonexistent.invalid');
+    expect(result).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Interoperability: cross-language consistency (same test matrix as Python)
+// Legacy Compatibility Wrapper Tests
 // ---------------------------------------------------------------------------
 
-describe('Cross-Language Consistency', () => {
-  const TEST_CASES = [
-    ['{"http": 8080, "https": 8443}', { http: 8080, https: 8443 }],
-    ['{"https": 443}', { https: 443 }],
-    ['{"http": 1, "https": 65535}', { http: 1, https: 65535 }],
-    ['{"http": 0}', null],
-    ['{"http": 65536}', null],
-    ['{"http": "80"}', null],
-    ['{"unknown": 80}', null],
-    ['{}', null],
-    ['v=spf1 include:example.com -all', null],
-    ['not json', null],
-    ['{"http": 8080, "https": 8443, "ws": 8080, "wss": 8443}',
-     { http: 8080, https: 8443, ws: 8080, wss: 8443 }],
-  ];
+describe('resolve_kirin_dns (legacy wrapper)', () => {
+  test('returns full resolution with fallback WS', async () => {
+    jest.spyOn(dns, 'resolveSrv').mockResolvedValue([]);
+    jest.spyOn(dns, 'resolveTxt').mockResolvedValue([]);
 
-  function parseTxtValue(text) {
-    const trimmed = text.trim();
-    let parsed;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      return null;
-    }
-    return validateKirinDnsRecord(parsed) ? parsed : null;
-  }
-
-  test.each(TEST_CASES)('input: %s -> expected: %j', (input, expected) => {
-    const result = parseTxtValue(input);
-    if (expected === null) {
-      expect(result).toBeNull();
-    } else {
-      expect(result).toEqual(expected);
-    }
+    const result = await resolve_kirin_dns('unknown.domain');
+    expect(result.ws.port).toBe(80); // fallback
+    expect(result.http).toBeNull();
+    expect(result.https).toBeNull();
+    expect(result.identity).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Setup: mock dns.resolveTxt before tests run
+// Constants Tests
 // ---------------------------------------------------------------------------
+
+describe('Constants', () => {
+  test('SRV_SERVICES has all three services', () => {
+    expect(SRV_SERVICES.http).toBe('_kirinnet-http._tcp');
+    expect(SRV_SERVICES.https).toBe('_kirinnet-https._tcp');
+    expect(SRV_SERVICES.ws).toBe('_kirinnet-ws._tcp');
+  });
+
+  test('FALLBACK_PORTS has standard ports', () => {
+    expect(FALLBACK_PORTS.http).toBe(80);
+    expect(FALLBACK_PORTS.https).toBe(443);
+    expect(FALLBACK_PORTS.ws).toBe(80);
+    expect(FALLBACK_PORTS.wss).toBe(443);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+
 beforeAll(() => {
+  dns.resolveSrv = jest.fn();
   dns.resolveTxt = jest.fn();
 });
 
 afterAll(() => {
+  dns.resolveSrv.mockRestore();
   dns.resolveTxt.mockRestore();
 });

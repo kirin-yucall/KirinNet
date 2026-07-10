@@ -1,198 +1,208 @@
 <?php
 /**
- * KirinDNS Resolution Protocol (ADRP) — PHP Client
+ * KirinDNS Resolution Protocol (ADRP) v2.0 — PHP Client Library
  *
- * Resolves service port mappings from DNS TXT records.
- * Pure PHP — no external dependencies beyond ext-json and ext-sockets.
+ * Implements ADRP as defined in 01_Standard/spec_v1.md.
  *
- * Usage:
- *   require_once 'kirin_dns.php';
- *   $ports = KirinDNS\resolve('alice.kirinnet.org');
- *   echo "HTTP: {$ports['http']}\n";
+ * Architecture:
+ *   SRV records for service port discovery (_kirinnet-http._tcp, etc.)
+ *   TXT records for identity metadata (id=;key=;nick=;ipfs=)
  *
- * Requires: PHP 8.0+ (for match, named arguments, str_starts_with)
+ * Requires: PHP 8.0+
  */
 
 namespace KirinDNS;
 
-const DEFAULT_HTTP  = 80;
-const DEFAULT_HTTPS = 443;
-const DEFAULT_WS    = 80;
-const DEFAULT_WSS   = 443;
+// ---------------------------------------------------------------------------
+// Constants (spec Section 2.2)
+// ---------------------------------------------------------------------------
 
-const RECOGNIZED = ['http', 'https', 'ws', 'wss'];
+const SRV_SERVICES = [
+    'http'  => '_kirinnet-http._tcp',
+    'https' => '_kirinnet-https._tcp',
+    'ws'    => '_kirinnet-ws._tcp',
+];
+
+const FALLBACK_PORTS = [
+    'http'  => 80,
+    'https' => 443,
+    'ws'    => 80,
+    'wss'   => 443,
+];
+
+// ---------------------------------------------------------------------------
+// Service Resolution (SRV)
+// ---------------------------------------------------------------------------
 
 /**
- * Resolve KirinDNS ports for a domain.
- * Returns an associative array with keys http, https, ws, wss.
- * Falls back to standard ports if no valid ADRP record exists.
+ * Resolve a single service port via SRV.
+ *
+ * @return array{target: string, port: int}|null
  */
-function resolve(string $domain): array
+function resolveService(string $domain, string $service): ?array
 {
-    $ports = [
-        'http'  => DEFAULT_HTTP,
-        'https' => DEFAULT_HTTPS,
-        'ws'    => DEFAULT_WS,
-        'wss'   => DEFAULT_WSS,
-    ];
+    $srvName = SRV_SERVICES[$service] ?? null;
+    if ($srvName === null) {
+        throw new \InvalidArgumentException(
+            "Unknown service: $service. Recognized: http, https, ws"
+        );
+    }
 
-    $records = dns_get_record($domain, DNS_TXT);
+    $fullName = "{$srvName}.{$domain}";
+    $records = @dns_get_record($fullName, DNS_SRV);
     if ($records === false || count($records) === 0) {
-        return $ports;
+        return null;
+    }
+
+    // RFC 2782: lowest priority, then highest weight
+    usort($records, function (array $a, array $b): int {
+        if ($a['pri'] !== $b['pri']) return $a['pri'] - $b['pri'];
+        return $b['weight'] - $a['weight'];
+    });
+
+    $best = $records[0];
+    return [
+        'target' => rtrim($best['target'], '.'),
+        'port'   => $best['port'],
+    ];
+}
+
+/**
+ * Resolve all SRV services for a domain.
+ *
+ * @return array{http: ?array, https: ?array, ws: ?array}
+ */
+function resolveAllServices(string $domain): array
+{
+    return [
+        'http'  => resolveService($domain, 'http'),
+        'https' => resolveService($domain, 'https'),
+        'ws'    => resolveService($domain, 'ws'),
+    ];
+}
+
+// ---------------------------------------------------------------------------
+// Identity Resolution (TXT)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a semicolon-separated key=value TXT string into an identity array.
+ *
+ * Format: id=<uuid>;key=<hex>;nick=<name>;ipfs=<bool>
+ * (spec Section 3.2)
+ *
+ * @return array{id: string, key: string, nick?: string, ipfs?: bool}|null
+ */
+function parseIdentityTxt(string $txt): ?array
+{
+    $txt = trim($txt);
+    if ($txt === '' || !str_starts_with($txt, 'id=')) {
+        return null;
+    }
+
+    $result = [];
+    foreach (explode(';', $txt) as $pair) {
+        $eq = strpos($pair, '=');
+        if ($eq === false) continue;
+        $key = trim(substr($pair, 0, $eq));
+        $val = trim(substr($pair, $eq + 1));
+        $result[$key] = $val;
+    }
+
+    // Both id and key are required
+    if (!isset($result['id']) || !isset($result['key'])) {
+        return null;
+    }
+
+    // Parse ipfs boolean
+    if (isset($result['ipfs'])) {
+        $result['ipfs'] = ($result['ipfs'] === 'true');
+    }
+
+    return $result;
+}
+
+/**
+ * Resolve identity metadata from TXT record.
+ *
+ * @return array{id: string, key: string, nick?: string, ipfs?: bool}|null
+ */
+function resolveIdentity(string $domain): ?array
+{
+    $records = @dns_get_record($domain, DNS_TXT);
+    if ($records === false || count($records) === 0) {
+        return null;
     }
 
     foreach ($records as $record) {
         $txt = $record['txt'] ?? ($record['entries'][0] ?? '');
-        $parsed = parseTxt($txt);
-        if ($parsed !== null) {
-            return $parsed + $ports; // overwrite recognized keys
+        $identity = parseIdentityTxt($txt);
+        if ($identity !== null) {
+            return $identity;
         }
     }
 
-    return $ports;
+    return null;
 }
 
+// ---------------------------------------------------------------------------
+// Legacy Compatibility Wrapper
+// ---------------------------------------------------------------------------
+
 /**
- * Resolve with a custom DNS server IP.
+ * Full resolution: SRV + TXT + identity (legacy wrapper).
+ *
+ * New code should use resolveService() and resolveIdentity() directly.
  */
-function resolveWithServer(string $domain, string $dnsServer): array
+function resolve_kirin_dns(string $domain): array
 {
-    // PHP's dns_get_record doesn't support custom DNS servers directly.
-    // For production, use a raw UDP DNS query.
-    $ports = [
-        'http'  => DEFAULT_HTTP,
-        'https' => DEFAULT_HTTPS,
-        'ws'    => DEFAULT_WS,
-        'wss'   => DEFAULT_WSS,
+    $ws = resolveService($domain, 'ws');
+
+    return [
+        'domain'   => $domain,
+        'ws'       => $ws ?? ['target' => $domain, 'port' => FALLBACK_PORTS['ws']],
+        'http'     => resolveService($domain, 'http'),
+        'https'    => resolveService($domain, 'https'),
+        'identity' => resolveIdentity($domain),
     ];
-
-    $raw = rawDnsQuery($domain, $dnsServer);
-    if ($raw === null) return $ports;
-
-    $txts = parseRawTxtResponses($raw);
-    foreach ($txts as $txt) {
-        $parsed = parseTxt($txt);
-        if ($parsed !== null) return $parsed + $ports;
-    }
-
-    return $ports;
 }
 
-/**
- * Parse a TXT record string as ADRP JSON.
- * Returns an array of recognized ports, or null if invalid.
- */
-function parseTxt(string $txt): ?array
-{
-    $txt = trim($txt);
-    if ($txt === '' || $txt[0] !== '{') return null;
-
-    try {
-        $data = json_decode($txt, true, flags: JSON_THROW_ON_ERROR);
-    } catch (\JsonException $e) {
-        return null;
-    }
-
-    if (!is_array($data) || count($data) === 0) return null;
-
-    $result = [];
-    foreach (RECOGNIZED as $key) {
-        if (!array_key_exists($key, $data)) continue;
-        $val = $data[$key];
-        if (!is_int($val) && !(is_string($val) && ctype_digit($val))) return null;
-        $val = (int) $val;
-        if ($val < 1 || $val > 65535) return null;
-        $result[$key] = $val;
-    }
-
-    return count($result) > 0 ? $result : null;
-}
-
-// ---- internal raw DNS query helpers -----------------------------------
-
-function rawDnsQuery(string $domain, string $dnsServer): ?string
-{
-    $query = buildDnsQuery($domain);
-    $socket = @fsockopen("udp://$dnsServer", 53, $errno, $errstr, 3);
-    if (!$socket) return null;
-
-    fwrite($socket, $query);
-    stream_set_timeout($socket, 3);
-    $response = fread($socket, 4096);
-    fclose($socket);
-
-    return $response !== false ? $response : null;
-}
-
-function buildDnsQuery(string $domain): string
-{
-    $id = pack('n', random_int(0, 65535));
-    $flags = pack('n', 0x0100); // standard query, recursion desired
-    $qdcount = pack('n', 1);
-    $header = $id . $flags . $qdcount . pack('n', 0) . pack('n', 0) . pack('n', 0);
-
-    $question = '';
-    foreach (explode('.', $domain) as $label) {
-        $question .= chr(strlen($label)) . $label;
-    }
-    $question .= "\x00";            // null terminator
-    $question .= pack('n', 16);     // QTYPE=TXT
-    $question .= pack('n', 1);      // QCLASS=IN
-
-    return $header . $question;
-}
-
-function parseRawTxtResponses(string $raw): array
-{
-    if (strlen($raw) < 12) return [];
-    $ancount = unpack('n', $raw[6] . $raw[7])[1];
-    if ($ancount === 0) return [];
-
-    $pos = 12;
-    // Skip question
-    while ($pos < strlen($raw) && ord($raw[$pos]) !== 0) {
-        $pos += ord($raw[$pos]) + 1;
-    }
-    $pos += 5; // null + QTYPE + QCLASS
-
-    $results = [];
-    for ($i = 0; $i < $ancount && $pos < strlen($raw); $i++) {
-        // Skip NAME (handle compression)
-        if ((ord($raw[$pos]) & 0xC0) === 0xC0) $pos += 2;
-        else {
-            while ($pos < strlen($raw) && ord($raw[$pos]) !== 0) $pos += ord($raw[$pos]) + 1;
-            $pos++;
-        }
-        if ($pos + 10 > strlen($raw)) break;
-        $rtype = unpack('n', substr($raw, $pos, 2))[1];
-        $pos += 8; // TYPE(2) + CLASS(2) + TTL(4)
-        $rdlen = unpack('n', substr($raw, $pos, 2))[1];
-        $pos += 2;
-        if ($rtype === 16 && $rdlen > 1) { // TXT
-            $txtlen = ord($raw[$pos]);
-            $pos++;
-            $results[] = substr($raw, $pos, min($txtlen, $rdlen - 1));
-            $pos += $rdlen - 1;
-        } else {
-            $pos += $rdlen;
-        }
-    }
-    return $results;
-}
-
-// ---- self-test (run: php kirin_dns.php) ----------------------------------
+// ---------------------------------------------------------------------------
+// Self-test (run: php kirin_dns.php)
+// ---------------------------------------------------------------------------
 if (basename(__FILE__) === basename($_SERVER['SCRIPT_FILENAME'] ?? '')) {
-    assert(($p = parseTxt('{"http":8080,"https":8443}')) !== null);
-    assert($p['http'] === 8080);
-    assert($p['https'] === 8443);
+    // SRV — nonexistent domain returns null
+    $ws = resolveService('nonexistent.invalid', 'ws');
+    assert($ws === null, 'no SRV for nonexistent domain');
 
-    assert(parseTxt('{}') === null);
-    assert(parseTxt('{"http":0}') === null);
-    assert(parseTxt('not json') === null);
+    // TXT identity — nonexistent domain returns null
+    $id = resolveIdentity('nonexistent.invalid');
+    assert($id === null, 'no TXT identity for nonexistent domain');
 
-    $ports = resolve('nonexistent.invalid');
-    assert($ports['http'] === 80);
-    assert($ports['https'] === 443);
+    // Identity parser
+    $parsed = parseIdentityTxt(
+        'id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false'
+    );
+    assert($parsed['id']   === '550e8400-e29b-41d4-a716-446655440000', 'id parsed');
+    assert($parsed['key']  === '04abc', 'key parsed');
+    assert($parsed['nick'] === 'Alice', 'nick parsed');
+    assert($parsed['ipfs'] === false, 'ipfs parsed as bool');
+
+    $minimal = parseIdentityTxt('id=test-id;key=0x00');
+    assert($minimal['id']  === 'test-id', 'minimal id');
+    assert($minimal['key'] === '0x00', 'minimal key');
+    assert(!isset($minimal['nick']), 'no nick');
+
+    // Invalid TXT
+    assert(parseIdentityTxt('v=spf1 include:_spf.example.com') === null, 'spf skipped');
+    assert(parseIdentityTxt('') === null, 'empty string');
+    assert(parseIdentityTxt('not an identity') === null, 'not identity');
+
+    // Legacy wrapper
+    $full = resolve_kirin_dns('nonexistent.invalid');
+    assert($full['ws']['port'] === 80, 'legacy ws fallback');
+    assert($full['http'] === null, 'legacy http null');
+    assert($full['identity'] === null, 'legacy identity null');
 
     echo "KirinDNS PHP self-test: PASSED\n";
 }

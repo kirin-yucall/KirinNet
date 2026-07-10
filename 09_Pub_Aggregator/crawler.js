@@ -157,31 +157,81 @@ function rateLimit(domain) {
   return Promise.resolve();
 }
 
-// --- KirinDNS TXT resolution ---
+// --- KirinDNS v2 SRV+TXT resolution ---
 
-async function resolveKirinDNS(domain) {
+const SRV_SERVICES = {
+  http:  '_kirinnet-http._tcp',
+  https: '_kirinnet-https._tcp',
+  ws:    '_kirinnet-ws._tcp',
+};
+
+const FALLBACK_PORTS = { http: 80, https: 443, ws: 80 };
+
+/**
+ * Resolve a single service via SRV.
+ * Returns { target, port } or null.
+ */
+async function resolveService(domain, service) {
+  if (!SRV_SERVICES[service]) {
+    return null;
+  }
+  const srvName = `${SRV_SERVICES[service]}.${domain}`;
+  try {
+    const records = await dns.resolveSrv(srvName);
+    if (!records || records.length === 0) return null;
+    // RFC 2782: sort by priority ascending
+    records.sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    return { target: records[0].name, port: records[0].port };
+  } catch (err) {
+    if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return null;
+    return null;
+  }
+}
+
+/**
+ * Resolve identity via TXT (id=<uuid>;key=<hex>;nick=<name>).
+ */
+async function resolveIdentity(domain) {
   try {
     const records = await dns.resolveTxt(domain);
-
     for (const record of records) {
       const txt = record.join('');
-      try {
-        const parsed = JSON.parse(txt);
-        if (parsed.http || parsed.https) {
-          return parsed;
-        }
-      } catch {
-        // Not valid JSON, skip
+      // Parse semicolon-delimited key=value pairs
+      const parsed = {};
+      for (const part of txt.split(';')) {
+        const eq = part.indexOf('=');
+        if (eq === -1) continue;
+        parsed[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+      }
+      if (parsed.id && parsed.key) {
+        return parsed;
       }
     }
-
     return null;
   } catch (err) {
-    if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') {
-      return null;
-    }
-    throw err;
+    if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') return null;
+    return null;
   }
+}
+
+/**
+ * Resolve full KirinDNS mapping for a domain.
+ * Returns { http, https, ws, identity } — null entries for unresolvable.
+ */
+async function resolveKirinDNS(domain) {
+  const [httpSrv, httpsSrv, wsSrv, identity] = await Promise.all([
+    resolveService(domain, 'http'),
+    resolveService(domain, 'https'),
+    resolveService(domain, 'ws'),
+    resolveIdentity(domain),
+  ]);
+
+  return {
+    http:  httpSrv  || { target: domain, port: FALLBACK_PORTS.http },
+    https: httpsSrv || { target: domain, port: FALLBACK_PORTS.https },
+    ws:    wsSrv    || { target: domain, port: FALLBACK_PORTS.ws },
+    identity,
+  };
 }
 
 // --- Update crawl status ---
@@ -201,16 +251,18 @@ async function crawlUserNode(domain) {
   console.log(`[Crawler] Crawling ${domain}...`);
 
   try {
-    // Step 1: Resolve KirinDNS TXT
+    // Step 1: Resolve KirinDNS v2 (SRV+TXT)
     const adrp = await resolveKirinDNS(domain);
-    if (!adrp) {
-      console.log(`[Crawler] No KirinDNS TXT record for ${domain}`);
-      updateCrawlStatus(domain, 'No KirinDNS TXT record');
-      return false;
-    }
 
-    const port = adrp.http || 80;
-    const baseUrl = `http://${domain}:${port}`;
+    // Use HTTP service SRV target and port, with fallback to domain:80
+    const targetHost = adrp.http.target || domain;
+    const port = adrp.http.port || 80;
+    const baseUrl = `http://${targetHost}:${port}`;
+
+    // Log identity if available
+    if (adrp.identity) {
+      console.log(`[Crawler] KirinDNS identity: ${adrp.identity.nick || adrp.identity.id}`);
+    }
 
     // Step 2: Fetch profile (OPTIONAL — content is what matters)
     let profile = null;
@@ -271,7 +323,9 @@ async function crawlUserNode(domain) {
     ]);
 
     // Step 5: Store in SQLite
-    const nodeId = profile ? profile.id : domain; // Use domain as fallback ID
+    const identityId = adrp.identity ? adrp.identity.id : null;
+    const nodeId = profile ? (profile.id || identityId || domain) : (identityId || domain);
+    const identityNick = adrp.identity ? adrp.identity.nick : null;
 
     // Upsert user
     db.prepare(`
@@ -289,7 +343,7 @@ async function crawlUserNode(domain) {
     `).run(
       nodeId,
       domain,
-      profile ? profile.nickname : domain.split('.')[0],
+      profile ? profile.nickname : (identityNick || domain.split('.')[0]),
       profile ? (profile.bio || '') : '',
       profile ? (profile.avatar || '') : '',
       port
