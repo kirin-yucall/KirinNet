@@ -1,291 +1,132 @@
-// ============================================================================
-// KirinNet Platform — Marketplace Routes
-//
-// Indexes and serves product listings from user nodes.
-// Endpoints:
-//   POST   /api/v1/marketplace/index          — Index a product (called by user node)
-//   GET    /api/v1/marketplace                — Browse/search products
-//   GET    /api/v1/marketplace/:id            — Product detail (platform view)
-//   PUT    /api/v1/marketplace/:id/status     — Mark sold/removed
-//   GET    /api/v1/marketplace/trending       — Trending products
-//   GET    /api/v1/marketplace/by-domain/:domain — Node's listings
-// ============================================================================
-
+// KirinNet — Marketplace API (DuckDB)
 const express = require('express');
 const router = express.Router();
 
-// ============================================================================
-// POST /marketplace/index — Index a product from a user node
-// ============================================================================
-router.post('/marketplace/index', (req, res) => {
+router.get('/marketplace', async (req, res) => {
   try {
-    const { product, source_domain, source_id } = req.body;
-    if (!source_domain || !source_id || !product)
-      return res.status(400).json({ error: 'source_domain, source_id, and product are required' });
+    const db = req.app.locals.db;
+    const limit = Math.min(+req.query.limit || 20, 100);
+    const offset = Math.max(+req.query.offset || 0, 0);
+    const category = req.query.category || null;
+    const sort = req.query.sort || 'newest';
+    const q = req.query.q || '';
 
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
+    let where = "WHERE status = 'listed'";
+    const params = [];
+    if (q) { where += ' AND (title ILIKE ? OR description ILIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+    if (category) { where += ' AND category = ?'; params.push(category); }
 
-    const now = new Date().toISOString();
-    const {
-      type = 'simple',
-      title,
-      description,
-      category = 'other',
-      base_price = 0,
-      currency = 'CNY',
-      payment_methods = ['alipay'],
-      condition = 'used',
-      location: loc,
-      tags = [],
-      xrp_address,
-      alipay_qr,
-      cover_image,
-      variants = [],
-    } = product;
+    let order = 'ORDER BY indexed_at DESC';
+    if (sort === 'price_asc') order = 'ORDER BY base_price ASC';
+    else if (sort === 'price_desc') order = 'ORDER BY base_price DESC';
+    else if (sort === 'popular') order = 'ORDER BY view_count DESC';
 
-    // Upsert
-    const existing = db.prepare(
-      'SELECT id FROM marketplace_products WHERE source_domain = ? AND source_id = ?'
-    ).get(source_domain, source_id);
+    const total = (await db.get(`SELECT COUNT(*) AS total FROM marketplace_products ${where}`, ...params)).total;
+    const results = await db.all(
+      `SELECT * FROM marketplace_products ${where} ${order} LIMIT ? OFFSET ?`,
+      ...params, limit, offset
+    );
 
-    let productId;
-    if (existing) {
-      db.prepare(`
-        UPDATE marketplace_products SET
-          type = ?, title = ?, description = ?, category = ?, base_price = ?, currency = ?,
-          payment_methods = ?, condition = ?, location = ?, tags = ?,
-          xrp_address = ?, alipay_qr = ?, cover_cid = ?, updated_at = ?
-        WHERE id = ?
-      `).run(type, title, description || '', category, base_price, currency,
-        JSON.stringify(payment_methods), condition, loc || null,
-        JSON.stringify(tags), xrp_address || null, alipay_qr || null,
-        cover_image || null, now, existing.id);
-      productId = existing.id;
-      // Clear old variants
-      db.prepare('DELETE FROM marketplace_variants WHERE product_id = ?').run(productId);
-      db.prepare('DELETE FROM marketplace_media WHERE product_id = ?').run(productId);
-    } else {
-      const result = db.prepare(`
-        INSERT INTO marketplace_products
-          (source_domain, source_id, type, title, description, category, base_price, currency,
-           payment_methods, condition, location, tags, xrp_address, alipay_qr, cover_cid,
-           indexed_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(source_domain, source_id, type, title, description || '', category, base_price,
-        currency, JSON.stringify(payment_methods), condition, loc || null,
-        JSON.stringify(tags), xrp_address || null, alipay_qr || null,
-        cover_image || null, now, now);
-      productId = result.lastInsertRowid;
+    const enriched = await Promise.all(results.map(async (p) => {
+      const cover = await db.get(
+        'SELECT ipfs_cid FROM marketplace_media WHERE product_id = ? AND is_cover = true ORDER BY order_index LIMIT 1', p.id
+      );
+      return { ...p, cover_cid: cover ? cover.ipfs_cid : null };
+    }));
+
+    res.json({ total, limit, offset, results: enriched });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/marketplace/:id', async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(404).json({ error: 'not_found' });
+  try {
+    const db = req.app.locals.db;
+    const product = await db.get("SELECT * FROM marketplace_products WHERE id = ? AND status = 'listed'", req.params.id);
+    if (!product) return res.status(404).json({ error: 'not_found' });
+
+    const [variants, media] = await Promise.all([
+      db.all('SELECT * FROM marketplace_variants WHERE product_id = ? ORDER BY id', product.id),
+      db.all('SELECT * FROM marketplace_media WHERE product_id = ? ORDER BY order_index', product.id)
+    ]);
+
+    // Boost view count via kv_store
+    const vk = `mp_views:${product.id}`;
+    const prev = await db.kv.get(vk).catch(() => '0');
+    await db.kv.put(vk, String(+prev + 1));
+    await db.run('UPDATE marketplace_products SET view_count = view_count + 1 WHERE id = ?', product.id);
+
+    res.json({ ...product, variants, media });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/marketplace', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { source_domain, source_id, type, title, description, category, base_price, currency, payment_methods, condition, location, tags, xrp_address, alipay_qr, cover_cid, variants, media } = req.body;
+
+    if (!source_domain || !title || !type) {
+      return res.status(400).json({ error: 'invalid_request', message: 'source_domain, title, and type are required' });
     }
 
+    const existing = await db.get('SELECT id FROM marketplace_products WHERE source_domain = ? AND source_id = ?', source_domain, source_id || title);
+    if (existing) return res.status(409).json({ error: 'duplicate', message: 'Product already exists' });
+
+    const user = await db.get('SELECT id FROM users WHERE domain = ?', source_domain);
+    if (!user) return res.status(404).json({ error: 'not_found', message: 'Source domain not registered' });
+
+    const rows = await db.all(
+      `INSERT INTO marketplace_products (source_domain, source_id, type, title, description, category, base_price, currency, payment_methods, condition, location, tags, cover_cid)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      source_domain, source_id || title, type, title, description || null,
+      category || 'other', base_price || 0, currency || 'CNY',
+      JSON.stringify(payment_methods || ['alipay']), condition || 'used', location || null,
+      JSON.stringify(tags || []), cover_cid || null
+    );
+    const id = rows[0].id;
+
     // Insert variants
-    for (const v of variants) {
-      db.prepare(`
-        INSERT INTO marketplace_variants (product_id, sku, attributes, price_modifier, stock, status)
-        VALUES (?, ?, ?, ?, ?, 'available')
-      `).run(productId, v.sku, JSON.stringify(v.attributes || {}), v.price_modifier || 0, v.stock ?? 1);
+    if (variants && variants.length) {
+      for (const v of variants) {
+        await db.all(
+          "INSERT INTO marketplace_variants (product_id, source_variant_id, sku, attributes, price_modifier, stock, status) VALUES (?,?,?,?,?,?,?) RETURNING id",
+          id, v.source_variant_id || null, v.sku || `V${Date.now()}_${Math.random().toString(36).slice(2,6)}`, JSON.stringify(v.attributes || {}), v.price_modifier || 0, v.stock || 1, v.status || 'available'
+        );
+      }
     }
 
     // Insert media
-    if (cover_image) {
-      db.prepare(`
-        INSERT INTO marketplace_media (product_id, ipfs_cid, is_cover, order_index)
-        VALUES (?, ?, TRUE, 0)
-      `).run(productId, cover_image);
+    if (media && media.length) {
+      for (let i = 0; i < media.length; i++) {
+        const m = media[i];
+        if (m.ipfs_cid) {
+          await db.all(
+            "INSERT INTO marketplace_media (product_id, ipfs_cid, is_cover, order_index) VALUES (?,?,?,?) RETURNING id",
+            id, m.ipfs_cid, m.is_cover || false, i
+          );
+        }
+      }
     }
 
-    res.json({ status: 'indexed', id: productId, source_domain, source_id });
-  } catch (err) {
-    console.error('[Marketplace] Index error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
+    const product = await db.get('SELECT * FROM marketplace_products WHERE id = ?', id);
+    res.status(201).json({ product_id: String(id), ...product });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ============================================================================
-// GET /marketplace — Browse/search
-// ============================================================================
-router.get('/marketplace', (req, res) => {
+router.put('/marketplace/:id', async (req, res) => {
   try {
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
+    const db = req.app.locals.db;
+    const product = await db.get('SELECT id FROM marketplace_products WHERE id = ?', req.params.id);
+    if (!product) return res.status(404).json({ error: 'not_found' });
 
-    const {
-      category, type, condition, currency,
-      min_price, max_price, search, sort = 'newest',
-      page = 1, limit = 20,
-    } = req.query;
-
-    const conditions = ["status = 'listed'"];
-    const params = [];
-
-    if (category)  { conditions.push('category = ?'); params.push(category); }
-    if (type)      { conditions.push('type = ?'); params.push(type); }
-    if (condition) { conditions.push('condition = ?'); params.push(condition); }
-    if (currency)  { conditions.push('currency = ?'); params.push(currency); }
-    if (min_price) { conditions.push('base_price >= ?'); params.push(parseFloat(min_price)); }
-    if (max_price) { conditions.push('base_price <= ?'); params.push(parseFloat(max_price)); }
-    if (search)    { conditions.push("(title LIKE ? OR description LIKE ?)"); const s = `%${search}%`; params.push(s, s); }
-
-    const countRow = db.prepare(
-      `SELECT COUNT(*) as total FROM marketplace_products WHERE ${conditions.join(' AND ')}`
-    ).get(...params);
-
-    const sortMap = {
-      newest: 'indexed_at DESC',
-      price_asc: 'base_price ASC',
-      price_desc: 'base_price DESC',
-      popular: 'view_count DESC',
-    };
-    const orderBy = sortMap[sort] || 'indexed_at DESC';
-
-    const offset = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
-    const products = db.prepare(`
-      SELECT * FROM marketplace_products
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY ${orderBy}
-      LIMIT ? OFFSET ?
-    `).all(...params, parseInt(limit, 10), offset);
-
-    const enriched = products.map(p => {
-      const variantCount = db.prepare(
-        'SELECT COUNT(*) as cnt FROM marketplace_variants WHERE product_id = ?'
-      ).get(p.id);
-
-      return {
-        ...p,
-        tags: JSON.parse(p.tags || '[]'),
-        payment_methods: JSON.parse(p.payment_methods || '["alipay"]'),
-        variant_count: variantCount ? variantCount.cnt : 0,
-      };
-    });
-
-    res.json({
-      total: countRow ? countRow.total : 0,
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      products: enriched,
-    });
-  } catch (err) {
-    console.error('[Marketplace] Browse error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-// ============================================================================
-// GET /marketplace/trending
-// ============================================================================
-router.get('/marketplace/trending', (req, res) => {
-  try {
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
-
-    const products = db.prepare(`
-      SELECT * FROM marketplace_products
-      WHERE status = 'listed'
-      ORDER BY view_count DESC, indexed_at DESC
-      LIMIT 12
-    `).all();
-
-    const enriched = products.map(p => ({
-      ...p,
-      tags: JSON.parse(p.tags || '[]'),
-      payment_methods: JSON.parse(p.payment_methods || '["alipay"]'),
-    }));
-
-    res.json({ products: enriched });
-  } catch (err) {
-    console.error('[Marketplace] Trending error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-// ============================================================================
-// GET /marketplace/by-domain/:domain
-// ============================================================================
-router.get('/marketplace/by-domain/:domain', (req, res) => {
-  try {
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
-
-    const products = db.prepare(`
-      SELECT * FROM marketplace_products
-      WHERE source_domain = ? AND status = 'listed'
-      ORDER BY indexed_at DESC
-    `).all(req.params.domain);
-
-    const enriched = products.map(p => ({
-      ...p,
-      tags: JSON.parse(p.tags || '[]'),
-      payment_methods: JSON.parse(p.payment_methods || '["alipay"]'),
-    }));
-
-    res.json({ domain: req.params.domain, total: enriched.length, products: enriched });
-  } catch (err) {
-    console.error('[Marketplace] By-domain error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-// ============================================================================
-// GET /marketplace/:id — Product detail
-// ============================================================================
-router.get('/marketplace/:id', (req, res) => {
-  try {
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
-
-    const product = db.prepare('SELECT * FROM marketplace_products WHERE id = ?').get(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-
-    // Increment view count
-    db.prepare('UPDATE marketplace_products SET view_count = view_count + 1 WHERE id = ?')
-      .run(req.params.id);
-
-    const variants = db.prepare(
-      'SELECT * FROM marketplace_variants WHERE product_id = ?'
-    ).all(req.params.id);
-
-    const media = db.prepare(
-      'SELECT * FROM marketplace_media WHERE product_id = ? ORDER BY order_index'
-    ).all(req.params.id);
-
-    res.json({
-      ...product,
-      tags: JSON.parse(product.tags || '[]'),
-      payment_methods: JSON.parse(product.payment_methods || '["alipay"]'),
-      variants: variants.map(v => ({ ...v, attributes: JSON.parse(v.attributes || '{}') })),
-      media,
-    });
-  } catch (err) {
-    console.error('[Marketplace] Detail error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-// ============================================================================
-// PUT /marketplace/:id/status
-// ============================================================================
-router.put('/marketplace/:id/status', (req, res) => {
-  try {
-    const { db } = req.app.locals;
-    if (!db) return res.status(503).json({ error: 'Database not available' });
-
-    const { status } = req.body;
-    if (!['listed', 'sold', 'removed'].includes(status))
-      return res.status(400).json({ error: "status must be listed|sold|removed" });
-
-    const product = db.prepare('SELECT * FROM marketplace_products WHERE id = ?').get(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-
-    db.prepare('UPDATE marketplace_products SET status = ?, updated_at = ? WHERE id = ?')
-      .run(status, new Date().toISOString(), req.params.id);
-
-    res.json({ id: req.params.id, status });
-  } catch (err) {
-    console.error('[Marketplace] Status error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
+    const fields = ['title', 'description', 'category', 'base_price', 'currency', 'condition', 'location', 'status'];
+    for (const f of fields) {
+      if (req.body[f] !== undefined) {
+        await db.run(`UPDATE marketplace_products SET ${f} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, req.body[f], req.params.id);
+      }
+    }
+    res.json({ message: 'Updated', product_id: req.params.id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

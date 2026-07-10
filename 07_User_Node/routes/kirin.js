@@ -1,57 +1,28 @@
+// KirinNet Node — Profile + Init + Restart (DuckDB)
 const express = require('express');
-const path = require('path');
+const bcrypt = require('bcryptjs');
 const fs = require('fs');
-
+const path = require('path');
 const router = express.Router();
 
-const DATA_DIR = process.env.DATA_DIR || '/app/data';
-const DB_PATH = path.join(DATA_DIR, 'db', 'auranode.db');
+let db;
+function set_db(d) { db = d; }
 
-// Initialize SQLite database
-const Database = require('better-sqlite3');
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// ---- Auth middleware ---------------------------------------------------------
 
-// Create schema if not exists
-db.exec(`
-  CREATE TABLE IF NOT EXISTS node (
-    id         TEXT PRIMARY KEY,
-    nickname   TEXT NOT NULL DEFAULT 'User',
-    bio        TEXT DEFAULT '',
-    avatar     TEXT DEFAULT '',
-    password   TEXT DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS content (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    type        TEXT NOT NULL CHECK (type IN ('video', 'image', 'audio', 'article')),
-    url         TEXT NOT NULL,
-    thumbnail   TEXT DEFAULT '',
-    file_size   INTEGER DEFAULT 0,
-    mime_type   TEXT DEFAULT '',
-    visibility  TEXT DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// Initialize node identity if not exists
-let node = db.prepare('SELECT * FROM node LIMIT 1').get();
-if (!node) {
-  const { v4: uuidv4 } = require('uuid');
-  const nodeId = uuidv4();
-  db.prepare('INSERT INTO node (id, nickname) VALUES (?, ?)').run(nodeId, 'User');
-  node = { id: nodeId, nickname: 'User', bio: '', avatar: '', password: '' };
-  console.log(`User Node initialized. ID: ${nodeId}`);
+async function getNode() {
+  return db.get('SELECT * FROM node LIMIT 1');
 }
 
-// --- Authentication middleware ---
+async function isNodeInit() {
+  const node = await getNode();
+  return !!(node && node.password && node.password.length >= 6);
+}
 
-function requireAuth(req, res, next) {
-  if (!node.password) return next();
+async function requireAuth(req, res, next) {
+  const node = await getNode();
+  // Uninitialized → allow everything (setup mode)
+  if (!node || !node.password || node.password.length < 6) return next();
 
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -59,85 +30,129 @@ function requireAuth(req, res, next) {
   }
 
   const [scheme, credentials] = authHeader.split(' ');
-
   if (scheme === 'Basic') {
     const [username, password] = Buffer.from(credentials, 'base64').toString().split(':');
-    if (username === node.id && password === node.password) return next();
+    const match = await bcrypt.compare(password, node.password);
+    if (match) return next();
   }
-
   if (scheme === 'Bearer') {
-    if (credentials === node.password) return next();
+    const match = await bcrypt.compare(credentials, node.password);
+    if (match) return next();
   }
 
-  res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
+  return res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
 }
 
-// --- KirinDNS Compatible Endpoints ---
+// ---- Init (first-time setup) ------------------------------------------------
 
-// GET /aura/profile
-// Returns the user's public profile metadata.
-// If password is set, requires Authorization header.
-router.get('/profile', (req, res) => {
-  // Refresh node data from DB
-  node = db.prepare('SELECT * FROM node LIMIT 1').get();
-
-  const profile = {
-    id: node.id,
-    nickname: node.nickname,
-    bio: node.bio || '',
-    avatar: node.avatar || '',
-    created_at: node.created_at,
-  };
-
-  res.json(profile);
+// GET /api/init/status — check if initialized
+router.get('/init/status', async (_req, res) => {
+  const ready = await isNodeInit();
+  const node = await getNode();
+  res.json({
+    initialized: ready,
+    domain: (await db.getSetting('node_domain')) || process.env.DOMAIN || '',
+    port: process.env.PORT || '8080',
+  });
 });
 
-// PUT /aura/profile
-// Update user profile (nickname, bio, avatar, password).
-// Requires authentication if password is set.
-router.put('/aura/profile', requireAuth, (req, res) => {
-  const { nickname, bio, avatar, password } = req.body;
+// POST /api/init — first-time setup
+router.post('/init', async (req, res) => {
+  const ready = await isNodeInit();
+  if (ready) return res.status(400).json({ error: 'already_initialized' });
 
-  if (nickname) db.prepare('UPDATE node SET nickname = ?').run(nickname);
-  if (bio !== undefined) db.prepare('UPDATE node SET bio = ?').run(bio);
-  if (avatar) db.prepare('UPDATE node SET avatar = ?').run(avatar);
-  if (password) db.prepare('UPDATE node SET password = ?').run(password);
-
-  // Refresh node data
-  node = db.prepare('SELECT * FROM node LIMIT 1').get();
-
-  res.json({ message: 'Profile updated', nickname: node.nickname });
-});
-
-// GET /aura/content
-// Returns a list of public content items.
-// If password is set, requires Authorization header.
-router.get('/content', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const offset = parseInt(req.query.offset) || 0;
-  const type = req.query.type || null;
-
-  let sql = 'SELECT id, title, type, url, thumbnail, description, file_size, created_at FROM content WHERE visibility = ?';
-  const params = ['public'];
-
-  // Support Since header for incremental fetching (Aggregator sync protocol)
-  const since = req.headers.since;
-  if (since) {
-    sql += ' AND created_at >= ?';
-    params.push(since);
+  const { password, domain, dns_provider, dns_api_key } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'password_min_length', min: 6 });
   }
 
-  if (type) {
-    sql += ' AND type = ?';
-    params.push(type);
-  }
+  const hash = await bcrypt.hash(password, 10);
+  await db.run('UPDATE node SET password = ?', hash);
 
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  if (domain) await db.setSetting('node_domain', domain);
+  if (dns_provider) await db.setSetting('dns_provider', dns_provider);
+  if (dns_api_key) await db.setSetting('dns_api_key', dns_api_key);
 
-  const items = db.prepare(sql).all(...params);
-
-  res.json(items);
+  res.json({ status: 'ok', message: 'Node initialized' });
 });
 
-module.exports = router;
+// ---- Profile ----------------------------------------------------------------
+
+router.get('/profile', requireAuth, async (req, res) => {
+  try {
+    const node = await getNode();
+    if (!node) return res.status(404).json({ error: 'not_found' });
+    res.json({
+      id: node.id,
+      nickname: node.nickname,
+      bio: node.bio || '',
+      avatar: node.avatar || '',
+      initialized: !!(node.password && node.password.length >= 6),
+      created_at: node.created_at,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/profile', requireAuth, async (req, res) => {
+  try {
+    const { nickname, bio, avatar, password } = req.body;
+    if (nickname) await db.run('UPDATE node SET nickname = ?', nickname);
+    if (bio !== undefined) await db.run('UPDATE node SET bio = ?', bio);
+    if (avatar) await db.run('UPDATE node SET avatar = ?', avatar);
+    if (password && password.length >= 6) {
+      const hash = await bcrypt.hash(password, 10);
+      await db.run('UPDATE node SET password = ?', hash);
+    }
+    const node = await getNode();
+    res.json({ message: 'Profile updated', nickname: node.nickname });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- Restart ----------------------------------------------------------------
+
+// POST /api/restart — graceful restart (for port/CA changes)
+router.post('/restart', requireAuth, async (_req, res) => {
+  res.json({ status: 'ok', message: 'Restarting in 2 seconds...' });
+  setTimeout(async () => {
+    try { await db.exec('CHECKPOINT'); } catch(e) {}
+    process.exit(0);
+  }, 2000);
+});
+
+// ---- CA Cert upload ---------------------------------------------------------
+
+const CA_DIR = path.join(process.env.DATA_DIR || '/app/data', 'ca');
+
+// POST /api/ca-cert — upload government CA PEM (JSON { pem: "..." })
+router.post('/ca-cert', requireAuth, async (req, res) => {
+  try {
+    const { pem } = req.body;
+    if (!pem || !pem.includes('BEGIN CERTIFICATE')) {
+      return res.status(400).json({ error: 'invalid_pem' });
+    }
+
+    fs.mkdirSync(CA_DIR, { recursive: true });
+    fs.writeFileSync(path.join(CA_DIR, 'custom-ca.pem'), pem);
+
+    await db.setSetting('ca_cert_uploaded', 'true');
+    await db.setSetting('ca_cert_path', path.join(CA_DIR, 'custom-ca.pem'));
+
+    res.json({ status: 'ok', message: 'CA cert saved. Restart to apply.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/ca-cert — check if CA uploaded
+router.get('/ca-cert', async (_req, res) => {
+  const uploaded = await db.getSetting('ca_cert_uploaded');
+  const caPath = await db.getSetting('ca_cert_path');
+  const exists = caPath && fs.existsSync(caPath);
+  res.json({ uploaded: uploaded === 'true' && exists, path: caPath || null });
+});
+
+// ---- Content feed (public) --------------------------------------------------
+
+// (handled by content.js router — this file provides requireAuth/isNodeInit)
+
+module.exports = { router, set_db, requireAuth, isNodeInit };

@@ -1,0 +1,9 @@
+node_modules/
+data/
+frontend/
+.git/
+*.md
+.env
+.env.example
+api_contract.md
+architecture.md

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设置 — KirinNet</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+.container { max-width: 700px; margin: 0 auto; padding: 40px 20px; }
+h1 { font-size: 24px; color: #f0f6fc; margin-bottom: 4px; }
+.sub { color: #8b949e; font-size: 13px; margin-bottom: 28px; }
+.section { color: #58a6ff; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 28px 0 12px; padding-left: 4px; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px 24px; margin-bottom: 12px; }
+.card h3 { font-size: 14px; color: #f0f6fc; margin-bottom: 2px; }
+.card .desc { font-size: 12px; color: #8b949e; margin-bottom: 10px; }
+.badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+.badge.warn { background: #3f2906; color: #e3b341; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.toggle input { opacity:0; width:0; height:0; }
+.slider { position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0; background:#30363d; border-radius:24px; transition:.3s; }
+.slider:before { content:""; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:#c9d1d9; border-radius:50%; transition:.3s; }
+input:checked + .slider { background: #238636; }
+input:checked + .slider:before { transform: translateX(20px); }
+input[type=text], input[type=password], input[type=number], select { padding: 7px 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 13px; }
+input:focus, select:focus { outline: none; border-color: #58a6ff; }
+.btn { padding: 6px 14px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; font-size: 12px; cursor: pointer; transition: .2s; }
+.btn:hover { background: #30363d; }
+.btn.primary { background: #238636; border-color: #238636; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn.danger { background: #da3633; border-color: #da3633; color: #fff; }
+.btn.danger:hover { background: #f85149; }
+.btn-group { display: flex; gap: 8px; align-items: center; }
+.ca-box { width: 100%; padding: 8px 12px; background: #0d1117; border: 1px dashed #30363d; border-radius: 6px; text-align: center; font-size: 13px; color: #8b949e; margin-top: 8px; cursor: pointer; }
+.ca-box:hover { border-color: #58a6ff; color: #c9d1d9; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #238636; color: #fff; padding: 10px 24px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 100; }
+.toast.show { opacity: 1; }
+.toast.err { background: #da3633; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚙️ 节点设置</h1>
+  <p class="sub">所有设置即时生效，带<span class="badge warn">需重启</span>标记的修改后需点击下方重启按钮</p>
+  <div id="cards"></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<input type="file" id="caFile" accept=".pem,.crt,.cer" style="display:none" onchange="uploadCA()">
+
+<script>
+const API = '/api/settings';
+let currentValues = {};
+
+function toast(msg, err) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+async function fetchJSON(url, opts) {
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+function boolCard(key, label, desc) {
+  const v = currentValues[key] === 'true';
+  return `<div class="card">
+    <h3>${label}</h3>
+    <p class="desc">${desc}</p>
+    <div class="row">
+      <span style="font-size:12px;color:#8b949e">当前：<b style="color:${v?'#3fb950':'#f85149'}">${v?'开启':'关闭'}</b></span>
+      <label class="toggle">
+        <input type="checkbox" data-key="${key}" ${v?'checked':''} onchange="saveBool('${key}', this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>`;
+}
+
+function textCard(key, label, desc, opts) {
+  const v = currentValues[key] || '';
+  const restart = opts?.restart ? '<span class="badge warn">需重启</span>' : '';
+  const type = opts?.type === 'password' ? 'password' : 'text';
+  return `<div class="card">
+    <h3>${label}${restart}</h3>
+    <p class="desc">${desc}</p>
+    <div class="row">
+      <div class="btn-group" style="flex:1">
+        <input type="${type}" id="inp_${key}" value="${v}" style="width:${key==='node_domain'?'260px':'180px'}">
+        <button class="btn primary" onclick="saveVal('${key}')">保存</button>
+        <button class="btn" onclick="document.getElementById('inp_${key}').value='${v}'">⟳</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function numCard(key, label, desc, opts) {
+  const v = currentValues[key] || '';
+  const restart = opts?.restart ? '<span class="badge warn">需重启</span>' : '';
+  return `<div class="card">
+    <h3>${label}${restart}</h3>
+    <p class="desc">${desc}</p>
+    <div class="row">
+      <div class="btn-group">
+        <input type="number" id="inp_${key}" value="${v}" min="1" style="width:100px">
+        <button class="btn primary" onclick="saveVal('${key}')">保存</button>
+        <button class="btn" onclick="document.getElementById('inp_${key}').value='${v}'">⟳</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function selectCard(key, label, desc, opts) {
+  const v = currentValues[key] || '';
+  const options = (opts?.options || []).map(o => `<option value="${o}" ${o===v?'selected':''}>${o||'不使用'}</option>`).join('');
+  return `<div class="card">
+    <h3>${label}</h3>
+    <p class="desc">${desc}</p>
+    <div class="row">
+      <div class="btn-group">
+        <select id="sel_${key}" onchange="saveVal('${key}')">${options}</select>
+      </div>
+    </div>
+  </div>`;
+}
+
+function caCard() {
+  return `<div class="card">
+    <h3>政府 CA 证书</h3>
+    <p class="desc">上传 CA 证书（PEM 格式），用于 DNS 密钥签名验证。上传后需重启。</p>
+    <div class="ca-box" onclick="document.getElementById('caFile').click()">
+      <span id="caStatus">点击上传 .pem 文件</span>
+    </div>
+  </div>`;
+}
+
+function restartCard() {
+  return `<div class="card" style="border-color:#3f2906">
+    <h3>🔄 重启节点</h3>
+    <p class="desc">修改域名、端口或上传 CA 证书后需要重启才能生效。重启过程约 5-10 秒。</p>
+    <div class="row">
+      <span style="font-size:12px;color:#8b949e">当前端口：<b>${currentValues._port||'8080'}</b></span>
+      <button class="btn danger" onclick="restart()">重启节点</button>
+    </div>
+  </div>`;
+}
+
+function passCard() {
+  return `<div class="card">
+    <h3>修改密码</h3>
+    <p class="desc">修改节点管理密码</p>
+    <div class="row">
+      <div class="btn-group">
+        <input type="password" id="inp_newpass" placeholder="新密码(至少6位)" style="width:180px">
+        <button class="btn primary" onclick="changePass()">修改密码</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function saveBool(key, val) {
+  try {
+    const d = await fetchJSON(API, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[key]:val?'true':'false'}) });
+    if (d.status === 'ok') { currentValues[key] = val?'true':'false'; toast('✅ ' + (val?'已开启':'已关闭')); }
+    else { toast('❌ ' + (d.error||'失败'), true); location.reload(); }
+  } catch(e) { toast('❌ 网络错误', true); }
+}
+
+async function saveVal(key) {
+  const el = document.getElementById('inp_'+key) || document.getElementById('sel_'+key);
+  const val = el.value;
+  try {
+    const d = await fetchJSON(API, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[key]:val}) });
+    if (d.status === 'ok') {
+      currentValues[key] = val;
+      const extra = d.restart_needed ? ' (修改后需重启)' : '';
+      toast('✅ 已保存: ' + val + extra);
+    } else { toast('❌ ' + (d.error||'失败'), true); }
+  } catch(e) { toast('❌ 网络错误', true); }
+}
+
+async function changePass() {
+  const pw = document.getElementById('inp_newpass').value;
+  if (pw.length < 6) return toast('❌ 密码至少6位', true);
+  try {
+    const r = await fetch('/kirin/profile', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw}) });
+    const d = await r.json();
+    if (d.message) toast('✅ 密码已修改'); else toast('❌ 失败', true);
+    document.getElementById('inp_newpass').value = '';
+  } catch(e) { toast('❌ 网络错误', true); }
+}
+
+async function uploadCA() {
+  const file = document.getElementById('caFile').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function() {
+    try {
+      const r = await fetch('/kirin/ca-cert', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ pem: reader.result })
+      });
+      const d = await r.json();
+      if (d.status === 'ok') {
+        document.getElementById('caStatus').textContent = '✅ ' + file.name + ' — 需重启生效';
+        toast('✅ CA 证书已上传，需重启');
+      } else { toast('❌ ' + (d.error||'失败'), true); }
+    } catch(e) { toast('❌ 上传失败', true); }
+  };
+  reader.readAsText(file);
+}
+
+async function restart() {
+  if (!confirm('确定要重启节点？修改域名/证书后需要重启才能生效。')) return;
+  try {
+    const r = await fetch('/kirin/restart', { method:'POST' });
+    const d = await r.json();
+    if (d.status === 'ok') {
+      toast('🔄 正在重启...');
+      setTimeout(() => location.reload(), 6000);
+    } else { toast('❌ ' + (d.error||'失败'), true); }
+  } catch(e) { /* server already down — will reload */ setTimeout(() => location.reload(), 6000); }
+}
+
+// Check CA status
+async function checkCA() {
+  try {
+    const d = await fetchJSON('/kirin/ca-cert');
+    if (d.uploaded) document.getElementById('caStatus').textContent = '✅ 已上传: custom-ca.pem — 需重启生效';
+  } catch(e) {}
+}
+
+(async () => {
+  currentValues = await fetchJSON(API);
+  currentValues._port = (await fetchJSON('/kirin/init/status')).port || '8080';
+
+  const cards = document.getElementById('cards');
+  cards.innerHTML =
+    '<div class="section">🔐 节点身份</div>' +
+    passCard() +
+    textCard('node_domain', '节点域名', '公开域名，用于其他节点发现和验证', {restart:true}) +
+    numCard('node_port', '节点端口', '服务监听端口，修改后需重启', {restart:true}) +
+    selectCard('dns_provider', 'DNS 服务商', '用于自动化 DNS 记录管理', {options:['','cloudflare','dnspod','aliyun','huaweicloud','aws-route53','google-domains','namecheap','godaddy','porkbun','namesilo','cloudns','he.net']}) +
+    textCard('dns_api_key', 'DNS API Key', '服务商的 API Token / Secret', {type:'password'}) +
+    caCard() +
+    '<div class="section">📡 内容索引</div>' +
+    boolCard('public_indexing', '公共内容索引', '关闭则仅展示自己的内容；开启后接收其他节点推送的内容，提供搜索和广告展示') +
+    '<div class="section">💰 广告位</div>' +
+    numCard('ad_slots_per_page', '每页广告位数', '内容分页时每页展示的广告位数量') +
+    numCard('ad_reserve_days', '提前预定天数', '广告位必须在展示日前多少天完成竞拍') +
+    numCard('ad_max_duration_days', '单次最长天数', '单次广告位可预定的最多天数') +
+    '<div class="section">⚡ 系统</div>' +
+    restartCard();
+
+  checkCA();
+})();
+</script>
+</body>
+</html>

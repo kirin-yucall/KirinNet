@@ -2,13 +2,13 @@
  * crawler.js — KirinNet Public Aggregator Crawler
  *
  * Crawls User Nodes by resolving their KirinDNS TXT records,
- * fetching public content metadata from /aura/content, then
+ * fetching public content metadata from /kirin/content, then
  * storing it in SQLite. Content-only — no social graph, no IM.
  *
  * Key behaviors:
  * - Rate limiting: 1 request per second per domain
  * - Thumbnail verification: fetches thumbnails to confirm accessibility
- * - Graceful degradation: /aura/profile is optional; content crawl proceeds regardless
+ * - Graceful degradation: /kirin/profile is optional; content crawl proceeds regardless
  * - Never crashes on a single node failure
  */
 
@@ -268,13 +268,13 @@ async function crawlUserNode(domain) {
     let profile = null;
     try {
       await rateLimit(domain);
-      profile = await fetchJSON(`${baseUrl}/aura/profile`, 8000);
+      profile = await fetchJSON(`${baseUrl}/kirin/profile`, 8000);
       if (!profile || !profile.nickname) profile = null;
     } catch (err) {
       console.log(`[Crawler] Profile fetch failed for ${domain}: ${err.message} — proceeding without profile`);
     }
 
-    // Step 3: Fetch content list from /aura/content
+    // Step 3: Fetch content list from /kirin/content
     // Handle both formats: bare array OR { items: [...], total, limit, offset }
     // Use incremental fetching with Since header if we have a previous crawl time
     let contentItems = [];
@@ -284,7 +284,7 @@ async function crawlUserNode(domain) {
 
     try {
       await rateLimit(domain);
-      const rawData = await fetchJSON(`${baseUrl}/aura/content?limit=200`, 15000, sinceHeader);
+      const rawData = await fetchJSON(`${baseUrl}/kirin/content?limit=200`, 15000, sinceHeader);
       if (Array.isArray(rawData)) {
         contentItems = rawData;
       } else if (rawData && Array.isArray(rawData.items)) {

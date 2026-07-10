@@ -1,194 +1,302 @@
+// KirinNet User Node — Content upload, management, comments (DuckDB + FS)
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const segHash = require('../lib/segment-hash');
 
 const router = express.Router();
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
-const DATA_DIR = process.env.DATA_DIR || '/app/data';
-const DB_PATH = path.join(DATA_DIR, 'db', 'auranode.db');
+let db, _requireAuth;
+function set_db(d, auth) { db = d; _requireAuth = auth; }
 
-// Initialize SQLite database
-const Database = require('better-sqlite3');
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-// Ensure media directory exists
-fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
-
-// Initialize node identity
-let node = db.prepare('SELECT * FROM node LIMIT 1').get();
-
-// --- Authentication middleware ---
-
+// Lazy auth middleware — defers to the real one injected via set_db
 function requireAuth(req, res, next) {
-  if (!node.password) return next();
-
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: 'unauthorized', message: 'Password required' });
-  }
-
-  const [scheme, credentials] = authHeader.split(' ');
-
-  if (scheme === 'Basic') {
-    const [username, password] = Buffer.from(credentials, 'base64').toString().split(':');
-    if (username === node.id && password === node.password) return next();
-  }
-
-  if (scheme === 'Bearer') {
-    if (credentials === node.password) return next();
-  }
-
-  res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
+  if (!_requireAuth) return next();
+  return _requireAuth(req, res, next);
 }
 
-// --- File upload configuration ---
+// Ensure media directory
+fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
 
+// ---- File upload configuration -----------------------------------------------
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(DATA_DIR, 'media'));
-  },
-  filename: function (req, file, cb) {
+  destination: (_req, _file, cb) => cb(null, path.join(DATA_DIR, 'media')),
+  filename: (_req, file, cb) => {
     const { v4: uuidv4 } = require('uuid');
     const ext = path.extname(file.originalname);
-    const filename = `${uuidv4()}${ext}`;
-    cb(null, filename);
+    cb(null, `${uuidv4()}${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 * 1024 }, // 5GB max
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
+  limits: { fileSize: 5 * 1024 * 1024 * 1024 }, // 5GB
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
       'video/mp4', 'video/webm', 'video/ogg',
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
       'audio/mp3', 'audio/ogg', 'audio/wav',
-      'text/markdown', 'text/html',
+      'text/markdown', 'text/html', 'text/plain',
+      'application/octet-stream',
     ];
-
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}`));
-    }
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error(`Unsupported file type: ${file.mimetype}`));
   },
 });
 
-// --- Content Management API ---
+// ---- Helpers ------------------------------------------------------------------
+function asyncHandler(fn) {
+  return (req, res, next) => fn(req, res, next).catch(next);
+}
+
+// ---- Content Endpoints --------------------------------------------------------
 
 // POST /api/upload
-// Upload a file (video/image/audio) and save metadata to SQLite.
-// Requires authentication if password is set.
-router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
-  try {
-    const { v4: uuidv4 } = require('uuid');
+router.post('/upload', requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
+  const { v4: uuidv4 } = require('uuid');
+  const { title, description, type, content_type, allow_comments, comment_permission, visibility, required_points, required_vip, thumbnail, tags } = req.body;
+  const file = req.file;
 
-    const { title, description, type, thumbnail } = req.body;
-    const file = req.file;
+  if (!file) return res.status(400).json({ error: 'no_file' });
+  if (!title) return res.status(400).json({ error: 'no_title' });
 
-    if (!file) {
-      return res.status(400).json({ error: 'no_file', message: 'No file uploaded' });
-    }
-
-    if (!title) {
-      return res.status(400).json({ error: 'no_title', message: 'Title is required' });
-    }
-
-    if (!type || !['video', 'image', 'audio', 'article'].includes(type)) {
-      return res.status(400).json({ error: 'invalid_type', message: 'Invalid content type' });
-    }
-
-    const contentId = uuidv4();
-    const url = `/media/${file.filename}`;
-    const thumbnailUrl = thumbnail || '';
-
-    db.prepare(`
-      INSERT INTO content (id, title, description, type, url, thumbnail, file_size, mime_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(contentId, title, description || '', type, url, thumbnailUrl, file.size, file.mimetype);
-
-    res.status(201).json({
-      id: contentId,
-      title,
-      type,
-      url,
-      thumbnail: thumbnailUrl,
-      file_size: file.size,
-      mime_type: file.mimetype,
-      created_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'upload_failed', message: err.message });
+  const ct = content_type || type || 'article';
+  if (!['video', 'image', 'audio', 'article', 'post'].includes(ct)) {
+    return res.status(400).json({ error: 'invalid_type' });
   }
-});
+  const cp = comment_permission || 'all';
+  if (!['all', 'followers', 'none'].includes(cp)) {
+    return res.status(400).json({ error: 'invalid_comment_permission', valid: ['all', 'followers', 'none'] });
+  }
+  const allowComments = allow_comments === 'true' || allow_comments === true || allow_comments === undefined;
+
+  // Normalize tags: comma-separated string → JSON array
+  let tagArray = [];
+  try {
+    if (tags) {
+      tagArray = typeof tags === 'string' ? tags.split(',').map(t=>t.trim()).filter(Boolean) : tags;
+    }
+  } catch(e) { tagArray = []; }
+
+  const contentId = uuidv4();
+  const bodyText = description || '';
+  const url = `/media/${file.filename}`;
+
+  await db.run(
+    `INSERT INTO content (id, title, description, content_type, url, thumbnail, file_size, mime_type, allow_comments, comment_permission, required_points, required_vip, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    contentId, title, description || '', ct, url, thumbnail || '', file.size, file.mimetype, allowComments, cp,
+    parseInt(required_points) || 0, required_vip || '', JSON.stringify(tagArray)
+  );
+
+  // Compute elastic segment hashes for deduplication
+  const segHashes = segHash.computeSegmentHashes(description || '');
+  if (segHashes.length > 0) {
+    await segHash.storeSegments(db, contentId, segHashes);
+    // Check for similar content (warn only, don't block)
+    const dupResult = await segHash.findSimilarContent(db, contentId, segHashes, 0.7);
+    if (dupResult.isDuplicate) {
+      console.log(`[Content] high similarity detected: ${dupResult.matched_id} (${(dupResult.similarity*100).toFixed(0)}%)`);
+    }
+  }
+
+  // Auto-encrypt for followers if public
+  const pushed = [];
+  if (visibility !== 'private') {
+    const followers = await db.all('SELECT follower_domain, public_key FROM followers');
+    for (const f of followers) {
+      try {
+        const crypto = require('crypto');
+        const ck = crypto.randomBytes(32).toString('hex');
+        const enc = crypto.publicEncrypt(
+          { key: f.public_key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING },
+          Buffer.from(ck)
+        );
+        await db.run(
+          `INSERT INTO encrypted_pushes (content_id, follower_domain, encrypted_key) VALUES (?, ?, ?)
+           ON CONFLICT (content_id, follower_domain) DO UPDATE SET encrypted_key = EXCLUDED.encrypted_key`,
+          contentId, f.follower_domain, enc.toString('base64')
+        );
+        pushed.push(f.follower_domain);
+      } catch (e) { console.error(`Encrypt for ${f.follower_domain} failed:`, e.message); }
+    }
+  }
+
+  res.status(201).json({
+    id: contentId, title, content_type: ct, url,
+    allow_comments: allowComments, comment_permission: cp, thumbnail: thumbnail || '',
+    file_size: file.size, mime_type: file.mimetype,
+    pushed_to_followers: pushed.length,
+    created_at: new Date().toISOString(),
+  });
+}));
+
+// POST /api/content — JSON-only content (no file required)
+router.post('/content', requireAuth, asyncHandler(async (req, res) => {
+  const { v4: uuidv4 } = require('uuid');
+  const { title, body, description, content_type, comment_permission, visibility, required_points, required_vip, thumbnail, tags } = req.body;
+
+  if (!title) return res.status(400).json({ error: 'no_title' });
+
+  const ct = content_type || 'article';
+  if (!['video', 'image', 'audio', 'article', 'post'].includes(ct)) {
+    return res.status(400).json({ error: 'invalid_type' });
+  }
+  const cp = comment_permission || 'all';
+  if (!['all', 'followers', 'none'].includes(cp)) {
+    return res.status(400).json({ error: 'invalid_comment_permission', valid: ['all', 'followers', 'none'] });
+  }
+
+  const contentId = uuidv4();
+  const textBody = body || description || '';
+
+  // Normalize tags
+  let tagArray = [];
+  try {
+    if (tags) {
+      tagArray = typeof tags === 'string' ? tags.split(',').map(t=>t.trim()).filter(Boolean) : tags;
+    }
+  } catch(e) { tagArray = []; }
+
+  await db.run(
+    `INSERT INTO content (id, title, description, content_type, url, thumbnail, allow_comments, comment_permission, required_points, required_vip, visibility, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    contentId, title, textBody.substring(0, 5000), ct, '', thumbnail || '', true, cp,
+    parseInt(required_points) || 0, required_vip || '', visibility || 'public', JSON.stringify(tagArray)
+  );
+
+  // Segment hashing
+  const segHashes = segHash.computeSegmentHashes(textBody);
+  if (segHashes.length > 0) {
+    await segHash.storeSegments(db, contentId, segHashes);
+    const dupResult = await segHash.findSimilarContent(db, contentId, segHashes, 0.7);
+    if (dupResult.isDuplicate) {
+      console.log(`[Content] high similarity detected: ${dupResult.matched_id} (${(dupResult.similarity*100).toFixed(0)}%)`);
+    }
+  }
+
+  res.status(201).json({
+    id: contentId, title, content_type: ct, comment_permission: cp,
+    description: textBody.substring(0, 200),
+    created_at: new Date().toISOString(),
+  });
+}));
 
 // GET /api/content
-// List all content items (public and private if authenticated).
-router.get('/content', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const offset = parseInt(req.query.offset) || 0;
+router.get('/content', asyncHandler(async (req, res) => {
+  const limit = Math.min(+req.query.limit || 50, 200);
+  const offset = +req.query.offset || 0;
   const type = req.query.type || null;
 
-  let sql = 'SELECT id, title, type, url, thumbnail, file_size, mime_type, created_at FROM content';
+  let sql = 'SELECT id, title, description, content_type, url, thumbnail, file_size, mime_type, allow_comments, comment_permission, tags, created_at FROM content WHERE deleted_at IS NULL';
   const params = [];
 
-  if (type) {
-    sql += ' WHERE type = ?';
-    params.push(type);
-  }
-
+  if (type) { sql += ' AND content_type = ?'; params.push(type); }
   sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
-  const items = db.prepare(sql).all(...params);
-
+  const items = await db.all(sql, ...params);
   res.json(items);
-});
+}));
 
 // GET /api/content/:id
-// Get a single content item by ID.
-router.get('/content/:id', (req, res) => {
-  const item = db.prepare('SELECT * FROM content WHERE id = ?').get(req.params.id);
-
-  if (!item) {
-    return res.status(404).json({ error: 'not_found', message: 'Content not found' });
-  }
-
+router.get('/content/:id', asyncHandler(async (req, res) => {
+  const item = await db.get('SELECT * FROM content WHERE id = ?', req.params.id);
+  if (!item) return res.status(404).json({ error: 'not_found' });
   res.json(item);
-});
+}));
+
+// PUT /api/content/:id/comments/toggle
+router.put('/content/:id/comments/toggle', requireAuth, asyncHandler(async (req, res) => {
+  const { allow } = req.body;
+  if (typeof allow !== 'boolean') return res.status(400).json({ error: 'allow must be boolean' });
+  const item = await db.get('SELECT * FROM content WHERE id = ?', req.params.id);
+  if (!item) return res.status(404).json({ error: 'not_found' });
+  await db.run('UPDATE content SET allow_comments = ? WHERE id = ?', allow, req.params.id);
+  res.json({ content_id: req.params.id, allow_comments: allow });
+}));
 
 // DELETE /api/content/:id
-// Delete content item and its file.
-// Requires authentication if password is set.
-router.delete('/content/:id', requireAuth, (req, res) => {
-  const item = db.prepare('SELECT * FROM content WHERE id = ?').get(req.params.id);
+router.delete('/content/:id', requireAuth, asyncHandler(async (req, res) => {
+  const item = await db.get('SELECT * FROM content WHERE id = ?', req.params.id);
+  if (!item) return res.status(404).json({ error: 'not_found' });
 
-  if (!item) {
-    return res.status(404).json({ error: 'not_found', message: 'Content not found' });
-  }
-
-  // Delete file from filesystem
   const filePath = path.join(DATA_DIR, 'media', path.basename(item.url));
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-  // Delete thumbnail if exists
   if (item.thumbnail) {
     const thumbPath = path.join(DATA_DIR, 'media', path.basename(item.thumbnail));
-    if (fs.existsSync(thumbPath)) {
-      fs.unlinkSync(thumbPath);
-    }
+    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
   }
 
-  // Delete from database
-  db.prepare('DELETE FROM content WHERE id = ?').run(req.params.id);
-
+  await db.run('DELETE FROM content WHERE id = ?', req.params.id);
+  await db.run('DELETE FROM comments WHERE content_id = ?', req.params.id);
   res.status(204).send();
-});
+}));
 
-module.exports = router;
+// ---- Comment Management (Node Owner Only) -------------------------------------
+
+// GET /api/comments — list all comments on this node's content (owner view)
+router.get('/comments', asyncHandler(async (req, res) => {
+  const limit = Math.min(+req.query.limit || 50, 200);
+  const offset = +req.query.offset || 0;
+
+  const items = await db.all(`
+    SELECT c.id, c.content_id, c.author_domain, c.body, c.parent_comment_id,
+           c.created_at, c.deleted_at, co.title AS content_title
+    FROM comments c JOIN content co ON c.content_id = co.id
+    ORDER BY c.created_at DESC LIMIT ? OFFSET ?
+  `, limit, offset);
+
+  res.json(items);
+}));
+
+// GET /api/content/:id/comments
+router.get('/content/:id/comments', asyncHandler(async (req, res) => {
+  const content = await db.get('SELECT id, allow_comments FROM content WHERE id = ?', req.params.id);
+  if (!content) return res.status(404).json({ error: 'not_found' });
+
+  const comments = await db.all(`
+    SELECT id, author_domain, body, parent_comment_id, created_at, deleted_at
+    FROM comments WHERE content_id = ? AND deleted_at IS NULL
+    ORDER BY created_at ASC
+  `, req.params.id);
+
+  // Build tree
+  const commentTree = buildCommentTree(comments);
+  res.json({ content_id: req.params.id, allow_comments: content.allow_comments,
+              total: comments.length, comments: commentTree });
+}));
+
+// DELETE /api/comments/:id — node owner can delete any comment on their content
+router.delete('/comments/:id', requireAuth, asyncHandler(async (req, res) => {
+  const comment = await db.get('SELECT * FROM comments WHERE id = ?', req.params.id);
+  if (!comment) return res.status(404).json({ error: 'not_found' });
+  // Verify comment belongs to this node's content
+  const content = await db.get('SELECT * FROM content WHERE id = ?', comment.content_id);
+  if (!content) return res.status(404).json({ error: 'content_not_found' });
+
+  // Soft delete
+  await db.run('UPDATE comments SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', req.params.id);
+  res.status(204).send();
+}));
+
+// ---- Helpers ------------------------------------------------------------------
+
+function buildCommentTree(comments) {
+  const map = new Map();
+  const roots = [];
+  for (const c of comments) map.set(c.id, { ...c, replies: [] });
+  for (const c of comments) {
+    if (c.parent_comment_id && map.has(c.parent_comment_id)) {
+      map.get(c.parent_comment_id).replies.push(map.get(c.id));
+    } else {
+      roots.push(map.get(c.id));
+    }
+  }
+  return roots;
+}
+
+module.exports = { router, set_db };

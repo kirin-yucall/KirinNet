@@ -1,21 +1,27 @@
-FROM node:18-alpine
+FROM node:20-slim
 
+# DuckDB comes with prebuilt binaries — no heavy build deps needed
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
-RUN npm ci --production
+# Install deps
+COPY package.json .
+RUN npm install --production && npm cache clean --force
 
-# Copy application code
-COPY server.js ./
-COPY routes/ ./routes/
-COPY public/ ./public/
+# Copy source
+COPY server.js .
+COPY models/        ./models/
+COPY routes/        ./routes/
+COPY lib/            ./lib/
+COPY public/         ./public/
 
-# Create data directory for persistent storage
-RUN mkdir -p /app/data/media /app/data/db
+# Create data directories for DuckDB + media files
+RUN mkdir -p /app/data/duckdb /app/data/media
 
-# Expose port
 EXPOSE 8080
 
-# Start server
+ENV NODE_ENV=production
+ENV DATA_DIR=/app/data
+
+VOLUME ["/app/data"]
+
 CMD ["node", "server.js"]

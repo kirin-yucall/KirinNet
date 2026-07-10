@@ -3,7 +3,7 @@ version: "3.9"
 services:
   user-node:
     build: .
-    container_name: user-node
+    container_name: kirinnet-user-node
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -12,3 +12,4 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/data
+      - KIRINNET_DOMAIN=node1.local

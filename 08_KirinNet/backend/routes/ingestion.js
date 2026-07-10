@@ -1,140 +1,53 @@
-// ============================================================================
-// KirinNet — Ingestion Log API
-//
-// GET  /api/v1/ingestion          — Paginated view of all index events
-// GET  /api/v1/ingestion/content/:id — Ingestion history for a single content
-// GET  /api/v1/ingestion/stats       — Summary stats (total, by action, by day)
-// ============================================================================
-
+// KirinNet — Ingestion API (DuckDB)
 const express = require('express');
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
-// GET /api/v1/ingestion — All ingestion events
-// ---------------------------------------------------------------------------
-router.get('/ingestion', async (req, res, next) => {
+router.post('/ingestion', async (req, res) => {
   try {
-    const { pool } = require('../server');
-    const {
-      action,      // indexed | updated | de_indexed | re_indexed
-      source_node, // filter by domain
-      page = 1,
-      limit = 50,
-    } = req.query;
+    const db = req.app.locals.db;
+    const { cid, title, description, category, tags, creator_domain, creator_key, signature, storage_type, content_type, source_node, allow_comments } = req.body;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
-    const offset = (pageNum - 1) * limitNum;
-
-    let countSql = 'SELECT COUNT(*) as total FROM ingestion_log WHERE 1=1';
-    let querySql = `
-      SELECT il.*, c.title as content_title, c.category as content_type, c.creator_domain
-      FROM ingestion_log il
-      JOIN content c ON c.id = il.content_id
-      WHERE 1=1`;
-    const params = [];
-    const countParams = [];
-
-    if (action && ['indexed', 'updated', 'de_indexed', 're_indexed'].includes(action)) {
-      const clause = ' AND il.action = $' + (params.length + 1);
-      querySql += clause;
-      countSql += clause;
-      params.push(action);
-      countParams.push(action);
-    }
-    if (source_node) {
-      const clause = ' AND il.source_node = $' + (params.length + 1);
-      querySql += clause;
-      countSql += clause;
-      params.push(source_node);
-      countParams.push(source_node);
+    if (!cid || !title || !creator_domain) {
+      return res.status(400).json({ error: 'invalid_request', message: 'cid, title, and creator_domain are required' });
     }
 
-    const countResult = await pool.query(countSql, countParams);
-    const total = parseInt(countResult.rows[0].total, 10);
+    const existing = await db.get('SELECT id FROM content WHERE cid = ?', cid);
+    if (existing) {
+      return res.status(409).json({ error: 'duplicate', message: 'Content already indexed', content_id: String(existing.id) });
+    }
 
-    querySql += ` ORDER BY il.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limitNum, offset);
+    // Auto-create user
+    let user = await db.get('SELECT id FROM users WHERE domain = ?', creator_domain);
+    if (!user) {
+      const r = await db.all('INSERT INTO users (domain) VALUES (?) RETURNING id', creator_domain);
+      user = { id: r[0].id };
+    }
 
-    const result = await pool.query(querySql, params);
+    const rows = await db.all(
+      `INSERT INTO content (cid, storage_type, content_type, title, description, category, tags, creator_domain, creator_key, signature, allow_comments)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      cid, storage_type || 'ipfs', content_type || 'article', title, description || null,
+      category || 'other', JSON.stringify(tags || []), creator_domain,
+      creator_key || '', signature || '', allow_comments !== undefined ? !!allow_comments : true
+    );
+    const id = rows[0].id;
 
-    res.json({
-      total,
-      page: pageNum,
-      limit: limitNum,
-      events: result.rows,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/v1/ingestion/content/:id — History for a single piece of content
-// ---------------------------------------------------------------------------
-router.get('/ingestion/content/:id', async (req, res, next) => {
-  try {
-    const { pool } = require('../server');
-
-    const result = await pool.query(
-      `SELECT il.*, c.title as content_title, c.category as content_type
-       FROM ingestion_log il
-       JOIN content c ON c.id = il.content_id
-       WHERE il.content_id = $1
-       ORDER BY il.created_at DESC`,
-      [req.params.id]
+    await db.all(
+      "INSERT INTO ingestion_log (content_id, action, source_node, cid, details) VALUES (?, 'ingested', ?, ?, ?) RETURNING id",
+      id, source_node || 'unknown', cid, JSON.stringify(req.body)
     );
 
-    res.json({
-      content_id: req.params.id,
-      history: result.rows,
-    });
-  } catch (err) {
-    next(err);
-  }
+    res.status(201).json({ content_id: String(id), cid, status: 'ingested' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/v1/ingestion/stats — Summary statistics
-// ---------------------------------------------------------------------------
-router.get('/ingestion/stats', async (req, res, next) => {
+router.get('/ingestion/log', async (req, res) => {
   try {
-    const { pool } = require('../server');
-
-    const [totalResult, actionResult, dailyResult, typeResult] = await Promise.all([
-      pool.query('SELECT COUNT(*) as total FROM ingestion_log'),
-      pool.query(
-        `SELECT action, COUNT(*) as count
-         FROM ingestion_log
-         GROUP BY action
-         ORDER BY count DESC`
-      ),
-      pool.query(
-        `SELECT DATE(created_at) as date, COUNT(*) as count
-         FROM ingestion_log
-         WHERE created_at >= NOW() - INTERVAL '30 days'
-         GROUP BY DATE(created_at)
-         ORDER BY date DESC
-         LIMIT 30`
-      ),
-      pool.query(
-        `SELECT c.category as type, COUNT(DISTINCT il.content_id) as count
-         FROM ingestion_log il
-         JOIN content c ON c.id = il.content_id
-         GROUP BY c.category
-         ORDER BY count DESC`
-      ),
-    ]);
-
-    res.json({
-      total_indexed: parseInt(totalResult.rows[0].total, 10),
-      by_action: actionResult.rows,
-      by_type: typeResult.rows,
-      daily_30d: dailyResult.rows,
-    });
-  } catch (err) {
-    next(err);
-  }
+    const db = req.app.locals.db;
+    const limit = Math.min(+req.query.limit || 20, 100);
+    const rows = await db.all('SELECT * FROM ingestion_log ORDER BY created_at DESC LIMIT ?', limit);
+    res.json({ count: rows.length, events: rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

@@ -138,20 +138,66 @@ KirinDNS_Project/
 ├── 03_Browser_Extension/  # Chrome Extension (Manifest V3)
 ├── 04_Chromium_Browser/   # Custom Chromium build instructions
 ├── 05_Adoption/           # IETF roadmap, GTM strategy, demo sites
-├── 07_User_Node/          # Self-hosted User Node Docker service
-│   ├── spec.md            # User Node specification
-│   ├── Dockerfile         # Docker image definition
-│   ├── docker-compose.yml # Docker Compose configuration
-│   ├── package.json       # Node.js dependencies
-│   └── src/               # User Node source code
-│       └── server.js      # Express API server
-└── 08_KirinNet/            # Federated social platform
-    ├── architecture.md    # System architecture
-    ├── api_contract.md    # RESTful API specification
-    ├── backend/           # Aggregator backend code
-    ├── frontend/          # Web application frontend
-    └── utils/             # Utility functions
+├── 07_User_Node/          # KirinNet Node — universal Docker image
+│   ├── spec.md            # Node specification v2.7.0
+│   ├── api.md             # Complete API reference (50+ endpoints)
+│   ├── Dockerfile         # Single Docker image
+│   ├── package.json       # Node.js dependencies (DuckDB + Express)
+│   ├── public/            # Web UI
+│   │   ├── init.html      # First-run initialization wizard
+│   │   ├── login.html     # Login gate (required every session)
+│   │   ├── index.html     # Main SPA (content/showcase/content/trade/center)
+│   │   └── settings.html  # Settings panel (legacy, SPA supersedes)
+│   ├── models/
+│   │   └── database.js    # DuckDB schema (all tables)
+│   └── routes/            # API route modules
+│       ├── kirin.js       # Init, profile, restart, CA cert
+│       ├── content.js     # Content CRUD + comments
+│       ├── im.js          # IM groups + temp trade keys
+│       ├── addresses.js   # Marketplace addresses
+│       ├── followers.js   # Follower subscriptions + encrypted push
+│       ├── monetize.js    # Points + VIP paywall
+│       ├── push.js        # Push to other nodes (DOH verification)
+│       ├── ad-auction.js  # Ad slot bidding system
+│       ├── indexer.js     # Public search/aggregation + blacklist + admin
+│       ├── settings.js    # Runtime settings API
+│       └── dns.js         # DNS record management (12 providers)
+└── 08_KirinNet/           # (deprecated — merged into 07_User_Node)
 ```
+
+---
+
+## KirinNet Node
+
+One Docker image, all capabilities built-in — content hosting, IM groups,
+ad slot auctions, follower subscriptions, points/VIP monetization,
+public indexing with blacklist management, and DNS record management.
+
+**Flow:** First visit → setup password → login gate → SPA main interface.
+Password is required every time you open the node (stored in sessionStorage only).
+
+Quick start:
+
+```bash
+docker run -d --name my-node --restart unless-stopped \
+  -p 8080:8080 -v ./data:/app/data \
+  kirin-yucall/kirinnet-node
+```
+
+Then open `http://localhost:8080/`, follow the init wizard, and login.
+
+**Key features:**
+- 🏠 Content hosting + media storage
+- 💬 IM groups + encrypted trade key exchange
+- 📢 Ad slot auction — bids from any domain, revenue is yours
+- 👥 Follower subscriptions with auto-encrypted push
+- 💰 Points + VIP paywall for monetization
+- 🔍 Public indexing with domain blacklist + content moderation
+- 🌐 DNS record management (12 providers)
+- ⚙️ All controls in the SPA — no CLI needed
+
+See [`07_User_Node/spec.md`](07_User_Node/spec.md) for the full specification and
+[`07_User_Node/api.md`](07_User_Node/api.md) for the complete API reference.
 
 ---
 
@@ -234,7 +280,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 - **Demo Sites**: [`05_Adoption/demo_sites.md`](05_Adoption/demo_sites.md)
 - **Chrome Extension**: [`03_Browser_Extension/`](03_Browser_Extension/)
 - **User Node**: [`07_User_Node/spec.md`](07_User_Node/spec.md)
-- **KirinNet Platform**: [`08_KirinNet/architecture.md`](08_KirinNet/architecture.md)
 - **Chromium Build**: [`04_Chromium_Browser/build_instructions.md`](04_Chromium_Browser/build_instructions.md)
 - **IETF Datatracker**: [draft-kirindns-adrp](https://datatracker.ietf.org/doc/draft-kirindns-adrp/) (coming soon)
 

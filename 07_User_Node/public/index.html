@@ -1,414 +1,745 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My User Node</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-           background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 900px; margin: 0 auto; }
-    h1 { color: #58a6ff; margin-bottom: 10px; }
-    h2 { color: #58a6ff; margin: 20px 0 10px; border-bottom: 1px solid #21262d; padding-bottom: 5px; }
-    .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin: 10px 0; }
-    .profile-info { display: grid; grid-template-columns: 80px 1fr; gap: 16px; align-items: start; }
-    .avatar { width: 80px; height: 80px; border-radius: 50%; background: #21262d; display: flex;
-              align-items: center; justify-content: center; font-size: 32px; color: #58a6ff; }
-    .profile-details label { display: block; color: #8b949e; font-size: 12px; margin: 8px 0 2px; }
-    .profile-details input, .profile-details textarea {
-      width: 100%; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d;
-      border-radius: 6px; color: #c9d1d9; font-size: 14px; }
-    .profile-details textarea { min-height: 60px; resize: vertical; }
-    .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin: 5px 5px 5px 0; }
-    .btn-primary { background: #238636; color: white; }
-    .btn-primary:hover { background: #2ea043; }
-    .btn-danger { background: #da3633; color: white; }
-    .btn-danger:hover { background: #f85149; }
-    .btn-secondary { background: #30363d; color: #c9d1d9; }
-    .btn-secondary:hover { background: #484f58; }
-    .content-item { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid #21262d; align-items: start; }
-    .content-item:last-child { border-bottom: none; }
-    .content-thumb { width: 120px; height: 68px; background: #21262d; border-radius: 4px; display: flex;
-                     align-items: center; justify-content: center; color: #484f58; font-size: 11px; flex-shrink: 0; }
-    .content-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
-    .content-info { flex: 1; }
-    .content-info h3 { font-size: 15px; color: #58a6ff; margin-bottom: 4px; }
-    .content-info p { font-size: 13px; color: #8b949e; }
-    .content-type { display: inline-block; padding: 2px 6px; background: #1f6feb; color: white;
-                    border-radius: 4px; font-size: 11px; margin-left: 8px; }
-    .upload-area { border: 2px dashed #30363d; border-radius: 8px; padding: 30px; text-align: center;
-                   cursor: pointer; transition: border-color 0.2s; }
-    .upload-area:hover, .upload-area.dragover { border-color: #58a6ff; }
-    .upload-area p { color: #8b949e; margin-top: 8px; font-size: 13px; }
-    .status { padding: 8px 12px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
-    .status.success { background: #1b4331; color: #95d5b2; }
-    .status.error { background: #44201a; color: #f85149; }
-    .status.info { background: #1c3a5f; color: #58a6ff; }
-    .hidden { display: none; }
-    .auth-bar { background: #1c3a5f; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px;
-                display: flex; align-items: center; gap: 8px; font-size: 13px; }
-    .auth-bar input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
-                      padding: 4px 8px; border-radius: 4px; flex: 1; }
-    .auth-bar .btn { padding: 4px 12px; }
-    #authSection { display: none; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KirinNet</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;flex-direction:column}
+/* Top Nav */
+.topbar{background:#161b22;border-bottom:1px solid #30363d;padding:0 20px;display:flex;align-items:center;height:48px;gap:0}
+.topbar .logo{font-size:16px;font-weight:700;color:#58a6ff;margin-right:24px;cursor:pointer;white-space:nowrap}
+.topbar .logo span{color:#3fb950;font-size:11px;margin-left:4px}
+.topbar nav{display:flex;gap:0;height:100%}
+.topbar nav a{display:flex;align-items:center;padding:0 16px;color:#8b949e;text-decoration:none;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
+.topbar nav a:hover,.topbar nav a.active{color:#f0f6fc;border-bottom-color:#58a6ff}
+.topbar .right{flex:1;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+.topbar .right input{padding:4px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:12px;width:160px}
+.topbar .right .btn{padding:5px 12px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;font-size:12px;cursor:pointer}
+.topbar .right .btn:hover{background:#30363d}
+/* Sub Nav */
+.subnav{background:#0d1117;border-bottom:1px solid #21262d;padding:0 20px;display:flex;align-items:center;height:36px;gap:4px}
+.subnav a{padding:3px 12px;color:#8b949e;text-decoration:none;font-size:12px;border-radius:4px;cursor:pointer;transition:.2s}
+.subnav a:hover,.subnav a.sel{color:#f0f6fc;background:#21262d}
+.subnav .spacer{flex:1}
+.subnav .home-link{font-size:12px;color:#58a6ff;cursor:pointer;padding:3px 10px;border-radius:4px}
+.subnav .home-link:hover{background:#1c3a5f}
+/* Main */
+.main{padding:24px 20px;flex:1;max-width:960px;width:100%;margin:0 auto}
+/* Cards */
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin-bottom:12px}
+.card h3{font-size:14px;color:#f0f6fc;margin-bottom:4px}
+.card .desc{font-size:12px;color:#8b949e;margin-bottom:10px}
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;text-align:center}
+.stat .num{font-size:28px;font-weight:700;color:#58a6ff}
+.stat .label{font-size:11px;color:#8b949e;margin-top:4px}
+/* Content feed */
+.feed-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #21262d;align-items:flex-start}
+.feed-item:last-child{border-bottom:none}
+.feed-item .thumb{width:80px;height:48px;background:#21262d;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#484f58;font-size:10px;flex-shrink:0}
+.feed-item .info{flex:1;min-width:0}
+.feed-item .info h4{font-size:14px;color:#58a6ff;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed-item .info .meta{font-size:11px;color:#8b949e}
+.feed-item .info .domain{color:#3fb950;margin-right:8px}
+/* Forms */
+input[type=text],input[type=password],input[type=number],input[type=url],select,textarea{padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#58a6ff}
+.btn{padding:6px 14px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;font-size:12px;cursor:pointer;transition:.2s}
+.btn:hover{background:#30363d}
+.btn.pri{background:#238636;border-color:#238636;color:#fff}
+.btn.pri:hover{background:#2ea043}
+.btn.danger{background:#da3633;border-color:#da3633;color:#fff}
+.btn.sm{padding:4px 10px;font-size:11px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;vertical-align:middle}
+.badge.warn{background:#3f2906;color:#e3b341}
+.badge.ok{background:#1b4331;color:#95d5b2}
+.badge.red{background:#44201a;color:#f85149}
+.toggle{position:relative;width:40px;height:22px;flex-shrink:0;display:inline-block}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#30363d;border-radius:22px;transition:.3s}
+.toggle .slider:before{content:"";position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#c9d1d9;border-radius:50%;transition:.3s}
+.toggle input:checked+.slider{background:#238636}
+.toggle input:checked+.slider:before{transform:translateX(18px)}
+.hidden{display:none!important}
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
+.toast.show{opacity:1}
+.toast.err{background:#da3633}
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #21262d}
+th{color:#8b949e;font-weight:500}
+/* Ad slot card */
+.ad-card{border-left:3px solid #58a6ff;padding-left:12px}
+/* Loading */
+.loading{text-align:center;color:#8b949e;padding:40px;font-size:13px}
+</style>
 </head>
 <body>
-  <h1>&#127760; My User Node</h1>
 
-  <!-- Auth section (shown when password is set) -->
-  <div id="authBar" class="auth-bar hidden">
-    <span>&#128274; Password:</span>
-    <input type="password" id="authPassword" placeholder="Enter your password">
-    <button class="btn btn-primary" onclick="authenticate()">Login</button>
+<!-- Top Navigation -->
+<div class="topbar">
+  <div class="logo" onclick="navTo('home')">🦄 KirinNet</div>
+  <nav>
+    <a data-tab="display" onclick="navMain('display')">📡 展示</a>
+    <a data-tab="content" onclick="navMain('content')">📝 内容</a>
+    <a data-tab="trade" onclick="navMain('trade')">💰 交易</a>
+    <a data-tab="im" onclick="navMain('im')">💬 消息</a>
+    <a data-tab="center" onclick="navMain('center')">⚙️ 中心</a>
+  </nav>
+  <div class="right">
+    <span id="domainDisplay" style="font-size:11px;color:#3fb950;margin-right:8px"></span>
+    <button class="btn" onclick="doLogout()" style="font-size:11px">退出</button>
   </div>
+</div>
 
-  <div id="status"></div>
+<!-- Sub Navigation -->
+<div class="subnav" id="subnav">
+  <a class="home-link" onclick="navTo('home')">🏠 主页</a>
+</div>
 
-  <!-- Profile Section -->
-  <h2>&#128100; Profile</h2>
+<!-- Main Content -->
+<div class="main" id="main"></div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+// ======================== State ===========================
+let AUTH='',DOMAIN='',PORT='8080';
+let activeMain='home', activeSub='';
+
+const H72=72*3600*1000, H48=48*3600*1000, H24=24*3600*1000;
+
+// Auth: localStorage persists 72h, auto-renew every 24h
+(async function checkAuth(){
+  AUTH = localStorage.getItem('kirin_auth') || '';
+  const ts = parseInt(localStorage.getItem('kirin_auth_ts')||'0');
+  if(!AUTH || !ts){ location.href='/'; return; }
+  const age = Date.now() - ts;
+  if(age >= H72){ localStorage.removeItem('kirin_auth');localStorage.removeItem('kirin_auth_ts');location.href='/';return; }
+  if(age >= H48){ localStorage.removeItem('kirin_auth');localStorage.removeItem('kirin_auth_ts');location.href='/';return; }
+  if(age > H24){ localStorage.setItem('kirin_auth_ts',Date.now()); } // renew
+  await loadInit();
+  navTo('home');
+})();
+
+// Periodic renewal: every hour check and renew if > 24h
+setInterval(()=>{
+  const ts=parseInt(localStorage.getItem('kirin_auth_ts')||'0');
+  if(!ts)return;
+  const age=Date.now()-ts;
+  if(age>=H72){logout();return;}
+  if(age>H24){localStorage.setItem('kirin_auth_ts',Date.now());}
+},3600000);
+
+async function loadInit(){
+  try{const d=await fetch('/api/init/status').then(r=>r.json());DOMAIN=d.domain||'';PORT=d.port||'8080';
+    const el=document.getElementById('domainDisplay');if(el)el.textContent=DOMAIN||'';}
+  catch(e){}
+}
+
+// ======================== API helpers =====================
+async function api(url,opts={}){
+  const h=opts.headers||{};
+  if(AUTH)h.Authorization='Bearer '+AUTH;
+  const r=await fetch(url,{...opts,headers:h});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||e.message||r.status)}
+  return r.json();
+}
+
+// ======================== Navigation ======================
+function navMain(tab){
+  activeMain=tab;activeSub='';
+  document.querySelectorAll('.topbar nav a').forEach(a=>a.classList.remove('active'));
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  renderSubnav();
+  renderContent();
+}
+
+function navTo(page,sub){
+  if(page==='home'){activeMain='home';activeSub='';document.querySelectorAll('.topbar nav a').forEach(a=>a.classList.remove('active'))}
+  else{activeMain=page;activeSub=sub||'';document.querySelectorAll('.topbar nav a').forEach(a=>a.classList.remove('active'));document.querySelector(`[data-tab="${page}"]`)?.classList.add('active')}
+  renderSubnav();
+  renderContent();
+}
+
+function renderSubnav(){
+  const sn=document.getElementById('subnav');
+  const sub={
+    display:[['display_feed','内容广场'],['display_ads','广告展示'],['display_explore','🔍 探索'],['explore_directions','方向设置'],['explore_blacklist','🚫 过滤'],['display_categories','分类浏览']],
+    content:[['content_upload','发布内容'],['content_my','我的内容'],['content_drafts','草稿箱'],['content_recycle','回收站'],['content_history','足迹'],['content_subscribe','订阅管理'],['content_fans','粉丝管理'],['content_comments','评论管理']],
+    trade:[['trade_auction','广告位竞价'],['trade_sell_orders','卖出订单'],['trade_buy_orders','购买订单'],['trade_cart','购物车'],['trade_favorites','我的收藏'],['trade_coupons','优惠卡券'],['trade_payment','支付设置'],['trade_receive','收款设置'],['trade_addresses','地址管理'],['trade_points','积分VIP']],
+    im:[['im_chat','群聊'],['im_private','私聊'],['im_notifications','通知'],['im_groups','分组管理'],['im_keys','交易密钥']],
+    center:[['center_settings','节点设置'],['center_profile','个人资料'],['center_followers','粉丝管理'],['center_stats','数据统计'],['center_logs','运行日志'],['center_about','关于']]
+  };
+  let h='';
+  if(activeMain==='home'){
+    h='<a class="home-link" style="color:#8b949e">🏠 控制台</a>';
+  }else{
+    h='<a class="home-link" onclick="navTo(\'home\')">🏠 返回主页</a>';
+    const items=sub[activeMain]||[];
+    items.forEach(([k,v])=>{
+      h+=`<a class="${activeSub===k?'sel':''}" onclick="navTo('${activeMain}','${k}')">${v}</a>`;
+    });
+  }
+  h+='<span class="spacer"></span>';
+  sn.innerHTML=h;
+}
+
+async function renderContent(){
+  const m=document.getElementById('main');
+  if(!AUTH&&activeMain!=='home'){m.innerHTML='<div class="loading">请先登录管理密码</div>';return}
+  const key=activeMain==='home'?'home':activeMain+'_'+(activeSub||'');
+  try{
+    switch(key){
+      case 'home': m.innerHTML=await pageHome();break;
+      case 'display_feed': m.innerHTML=await pageDisplayFeed();break;
+      case 'display_ads': m.innerHTML=await pageDisplayAds();break;
+      case 'display_explore': m.innerHTML=await pageDisplayExplore();break;
+      case 'explore_directions': m.innerHTML=pageExploreDirections();break;
+      case 'explore_blacklist': m.innerHTML=pageExploreBlacklist();break;
+      case 'display_categories': m.innerHTML=await pageDisplayCategories();break;
+      case 'content_upload': m.innerHTML=pageContentUpload();break;
+      case 'content_my': m.innerHTML=await pageContentMy();break;
+      case 'content_drafts': m.innerHTML=await pageContentDrafts();break;
+      case 'content_recycle': m.innerHTML=await pageContentRecycle();break;
+      case 'content_history': m.innerHTML=await pageContentHistory();break;
+      case 'content_subscribe': m.innerHTML=await pageContentSubscribe();break;
+      case 'content_fans': m.innerHTML=await pageContentFans();break;
+      case 'content_comments': m.innerHTML=await pageContentComments();break;
+      case 'trade_auction': m.innerHTML=await pageTradeAuction();break;
+      case 'trade_sell_orders': m.innerHTML=await pageTradeSellOrders();break;
+      case 'trade_buy_orders': m.innerHTML=await pageTradeBuyOrders();break;
+      case 'trade_cart': m.innerHTML=await pageTradeCart();break;
+      case 'trade_favorites': m.innerHTML=await pageTradeFavorites();break;
+      case 'trade_coupons': m.innerHTML=await pageTradeCoupons();break;
+      case 'trade_payment': m.innerHTML=await pageTradePayment();break;
+      case 'trade_receive': m.innerHTML=await pageTradeReceive();break;
+      case 'trade_addresses': m.innerHTML=await pageTradeAddresses();break;
+      case 'trade_points': m.innerHTML=await pageTradePoints();break;
+      case 'center_settings': m.innerHTML=await pageCenterSettings();break;
+      case 'center_profile': m.innerHTML=await pageCenterProfile();break;
+      case 'center_followers': m.innerHTML=await pageCenterFollowers();break;
+      case 'center_stats': m.innerHTML=await pageCenterStats();break;
+      case 'center_logs': m.innerHTML=await pageCenterLogs();break;
+      case 'center_about': m.innerHTML=await pageCenterAbout();break;
+      case 'im_chat': m.innerHTML=await pageIMChat();break;
+      case 'im_private': m.innerHTML=await pageIMPrivateChat();break;
+      case 'im_notifications': m.innerHTML=await pageIMNotifications();break;
+      case 'im_groups': m.innerHTML=await pageIMGroups();break;
+      case 'im_keys': m.innerHTML=await pageIMKeys();break;
+      default: m.innerHTML='<div class="loading">未知页面</div>';
+    }
+    bindEvents(key);
+  }catch(e){m.innerHTML=`<div class="loading">加载失败: ${e.message}</div>`}
+}
+
+// ======================== Pages ===========================
+
+// --- Home / Dashboard ---
+async function pageHome(){
+  let stats='';
+  try{
+    const s=await api('/api/settings');
+    const cont=await fetch('/api/content').then(r=>r.json()).catch(()=>[]);
+    const ads=await fetch('/api/ad-slots').then(r=>r.json()).catch(()=>({total:0}));
+    const followers=await fetch('/api/followers/list').then(r=>r.json()).catch(()=>[]);
+    const indexStats=await fetch('/api/indexer/search?limit=1').then(r=>r.json()).catch(()=>({total:0}));
+    stats=`
+    <div class="stats">
+      <div class="stat"><div class="num">${cont.length||0}</div><div class="label">我的内容</div></div>
+      <div class="stat"><div class="num">${ads.total||0}</div><div class="label">广告位</div></div>
+      <div class="stat"><div class="num">${followers.length||0}</div><div class="label">粉丝</div></div>
+      <div class="stat"><div class="num">${indexStats.total||0}</div><div class="label">索引条目</div></div>
+    </div>`;
+  }catch(e){stats='<div class="stats"><div class="stat"><div class="num">-</div><div class="label">需要登录</div></div></div>'}
+
+  return `
+  <h2 style="font-size:18px;color:#f0f6fc;margin-bottom:20px">🏠 节点控制台</h2>
+  ${AUTH?`<p style="color:#8b949e;font-size:13px;margin-bottom:16px">域名: <b style="color:#3fb950">${DOMAIN||'未设置'}</b> · 端口: <b style="color:#58a6ff">${PORT}</b></p>`:''}
+  ${stats}
   <div class="card">
-    <div class="profile-info">
-      <div class="avatar" id="avatarDisplay">&#128100;</div>
-      <div class="profile-details">
-        <label>Nickname</label>
-        <input type="text" id="nickname" placeholder="Your nickname">
-        <label>Bio</label>
-        <textarea id="bio" placeholder="Tell us about yourself"></textarea>
-        <label>Avatar URL (optional)</label>
-        <input type="text" id="avatarUrl" placeholder="/media/avatar.jpg">
-        <div style="margin-top: 12px;">
-          <button class="btn btn-primary" onclick="saveProfile()">&#128190; Save Profile</button>
-          <button class="btn btn-secondary" onclick="showPasswordDialog()">&#128274; Set Password</button>
-        </div>
-      </div>
+    <h3>快捷入口</h3>
+    <div class="row" style="margin-top:8px">
+      <button class="btn pri" onclick="navTo('content','content_upload')">📤 发布内容</button>
+      <button class="btn" onclick="navTo('trade','trade_auction')">💰 广告位竞价</button>
+      <button class="btn" onclick="navTo('center','center_settings')">⚙️ 节点设置</button>
+      <button class="btn" onclick="navTo('display','display_feed')">📡 内容广场</button>
     </div>
-  </div>
+  </div>`;
+}
 
-  <!-- Upload Section -->
-  <h2>&#128228; Upload Content</h2>
-  <div class="card">
-    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-      <p>&#128196; Click to upload or drag &amp; drop</p>
-      <p>Supports: video, image, audio (max 5GB)</p>
-    </div>
-    <input type="file" id="fileInput" class="hidden" onchange="handleFileSelect(event)">
-    <div id="uploadForm" class="hidden" style="margin-top: 12px;">
-      <label>Title</label>
-      <input type="text" id="uploadTitle" placeholder="Content title" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin: 4px 0 12px;">
-      <label>Type</label>
-      <select id="uploadType" style="padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin: 4px 0 12px;">
-        <option value="video">Video</option>
-        <option value="image">Image</option>
-        <option value="audio">Audio</option>
-        <option value="article">Article</option>
-      </select>
-      <button class="btn btn-primary" onclick="uploadFile()">&#128228; Upload</button>
-      <button class="btn btn-secondary" onclick="cancelUpload()">Cancel</button>
-    </div>
-  </div>
-
-  <!-- Content List -->
-  <h2>&#128194; My Content</h2>
-  <div class="card">
-    <div id="contentList">
-      <p style="color: #8b949e; text-align: center;">Loading content...</p>
-    </div>
-  </div>
-
-  <script>
-    let authToken = '';
-    let selectedFile = null;
-
-    // --- Authentication ---
-
-    function getAuthHeader() {
-      if (authToken) return `Bearer ${authToken}`;
-      return '';
-    }
-
-    function authenticate() {
-      const password = document.getElementById('authPassword').value;
-      if (!password) return showStatus('Please enter your password', 'error');
-
-      // Use Bearer auth
-      authToken = password;
-
-      // Test the auth
-      fetch('/aura/profile', { headers: { Authorization: `Bearer ${password}` } })
-        .then(r => r.json())
-        .then(data => {
-          showStatus('Authenticated successfully', 'success');
-          document.getElementById('authBar').classList.add('hidden');
-          loadProfile();
-          loadContent();
-        })
-        .catch(() => {
-          authToken = '';
-          showStatus('Authentication failed', 'error');
-        });
-    }
-
-    // --- Profile ---
-
-    async function loadProfile() {
-      try {
-        const res = await fetch('/aura/profile');
-        const data = await res.json();
-
-        document.getElementById('nickname').value = data.nickname || '';
-        document.getElementById('bio').value = data.bio || '';
-        document.getElementById('avatarUrl').value = data.avatar || '';
-
-        if (data.avatar) {
-          document.getElementById('avatarDisplay').innerHTML =
-            `<img src="${data.avatar}" style="width:80px;height:80px;border-radius:50%;">`;
-        }
-
-        // Check if password is set (if auth was required)
-        if (!authToken && res.status === 200) {
-          // Profile loaded without auth, no password set
-        }
-      } catch (err) {
-        showStatus('Failed to load profile: ' + err.message, 'error');
-      }
-    }
-
-    async function saveProfile() {
-      try {
-        const body = {
-          nickname: document.getElementById('nickname').value,
-          bio: document.getElementById('bio').value,
-          avatar: document.getElementById('avatarUrl').value,
-        };
-
-        const res = await fetch('/aura/profile', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: getAuthHeader(),
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (res.ok) {
-          showStatus('Profile saved successfully', 'success');
-          loadProfile();
-        } else {
-          const err = await res.json();
-          showStatus(err.message || 'Failed to save profile', 'error');
-        }
-      } catch (err) {
-        showStatus('Failed to save profile: ' + err.message, 'error');
-      }
-    }
-
-    function showPasswordDialog() {
-      const password = prompt('Enter your password (or leave empty to remove):');
-      if (password === null) return;
-
-      fetch('/aura/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: getAuthHeader(),
-        },
-        body: JSON.stringify({ password }),
-      })
-      .then(r => r.json())
-      .then(data => {
-        showStatus(password ? 'Password set' : 'Password removed', 'success');
-        if (password) {
-          authToken = password;
-        }
-      })
-      .catch(err => showStatus('Failed to set password: ' + err.message, 'error'));
-    }
-
-    // --- Content ---
-
-    async function loadContent() {
-      try {
-        const res = await fetch('/api/content');
-        const items = await res.json();
-
-        if (items.length === 0) {
-          document.getElementById('contentList').innerHTML =
-            '<p style="color: #8b949e; text-align: center;">No content yet. Upload something!</p>';
-          return;
-        }
-
-        document.getElementById('contentList').innerHTML = items.map(item => `
-          <div class="content-item">
-            <div class="content-thumb">
-              ${item.thumbnail ? `<img src="${item.thumbnail}">` : item.type.toUpperCase()}
-            </div>
-            <div class="content-info">
-              <h3>${escapeHtml(item.title)} <span class="content-type">${item.type}</span></h3>
-              <p>${escapeHtml(item.description || '')} &middot; ${formatSize(item.file_size)} &middot; ${formatDate(item.created_at)}</p>
-            </div>
-            <div>
-              <a href="${item.url}" target="_blank" class="btn btn-secondary" style="text-decoration:none;">&#128279;</a>
-              <button class="btn btn-danger" onclick="deleteContent('${item.id}')">&#128465;</button>
-            </div>
+// --- Display: 内容广场 ---
+async function pageDisplayFeed(){
+  let html='<h2>📡 内容广场</h2>';
+  try{
+    const d=await fetch('/api/indexer/search?limit=30').then(r=>r.json());
+    if(!d.results||!d.results.length)html+='<div class="card"><p style="color:#8b949e">暂无索引内容</p></div>';
+    else{
+      html+=`<p style="color:#8b949e;font-size:12px;margin-bottom:8px">共 ${d.total} 条</p>`;
+      d.results.forEach(item=>{
+        html+=`<div class="card feed-item" style="display:block">
+          <div class="info"><h4>${esc(item.title)}</h4>
+            <div class="meta"><span class="domain">${esc(item.creator_domain)}</span>${esc(item.content_type||'article')} · ${fmtDate(item.created_at)}</div>
+            <p style="font-size:12px;color:#8b949e;margin-top:4px">${esc(item.description||'')}</p>
           </div>
-        `).join('');
-      } catch (err) {
-        showStatus('Failed to load content: ' + err.message, 'error');
-      }
+        </div>`;
+      });
     }
+  }catch(e){html+=`<div class="card"><p style="color:#f85149">索引未开启或加载失败</p></div>`}
+  return html;
+}
 
-    async function deleteContent(id) {
-      if (!confirm('Delete this content?')) return;
-
-      try {
-        const res = await fetch(`/api/content/${id}`, {
-          method: 'DELETE',
-          headers: { Authorization: getAuthHeader() },
-        });
-
-        if (res.ok) {
-          showStatus('Content deleted', 'success');
-          loadContent();
-        } else {
-          const err = await res.json();
-          showStatus(err.message || 'Failed to delete', 'error');
-        }
-      } catch (err) {
-        showStatus('Failed to delete: ' + err.message, 'error');
-      }
-    }
-
-    // --- Upload ---
-
-    function handleFileSelect(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      selectedFile = file;
-      document.getElementById('uploadForm').classList.remove('hidden');
-      document.getElementById('uploadTitle').value = file.name.replace(/\.[^.]+$/, '');
-
-      // Auto-detect type
-      const typeSelect = document.getElementById('uploadType');
-      if (file.type.startsWith('video/')) typeSelect.value = 'video';
-      else if (file.type.startsWith('image/')) typeSelect.value = 'image';
-      else if (file.type.startsWith('audio/')) typeSelect.value = 'audio';
-      else typeSelect.value = 'article';
-    }
-
-    function cancelUpload() {
-      selectedFile = null;
-      document.getElementById('uploadForm').classList.add('hidden');
-      document.getElementById('fileInput').value = '';
-    }
-
-    async function uploadFile() {
-      if (!selectedFile) return showStatus('No file selected', 'error');
-
-      const title = document.getElementById('uploadTitle').value;
-      const type = document.getElementById('uploadType').value;
-
-      if (!title) return showStatus('Title is required', 'error');
-
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('title', title);
-      formData.append('type', type);
-
-      try {
-        showStatus('Uploading...', 'info');
-
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { Authorization: getAuthHeader() },
-          body: formData,
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          showStatus(`Uploaded: ${data.title}`, 'success');
-          cancelUpload();
-          loadContent();
-        } else {
-          const err = await res.json();
-          showStatus(err.message || 'Upload failed', 'error');
-        }
-      } catch (err) {
-        showStatus('Upload failed: ' + err.message, 'error');
-      }
-    }
-
-    // --- Drag & Drop ---
-
-    const uploadArea = document.getElementById('uploadArea');
-
-    uploadArea.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadArea.classList.add('dragover');
+// --- Display: 广告展示 ---
+async function pageDisplayAds(){
+  let html='<h2>📢 广告展示</h2>';
+  try{
+    const d=await fetch('/api/indexer/ads?page=1').then(r=>r.json());
+    if(!d.ads||!d.ads.length)html+='<div class="card"><p style="color:#8b949e">暂无广告</p></div>';
+    else d.ads.forEach(a=>{
+      html+=`<div class="card ad-card"><h3>广告位 #${a.slot}</h3>
+        <p class="desc">${a.date_range} · 投放方: ${esc(a.advertiser_domain)} · 价格: ${a.price}</p></div>`;
     });
+  }catch(e){html+='<div class="card"><p style="color:#8b949e">加载失败</p></div>'}
+  return html;
+}
 
-    uploadArea.addEventListener('dragleave', () => {
-      uploadArea.classList.remove('dragover');
+// --- Display: 探索（委托 pages_explore.js） ---
+function pageDisplayExplore(){
+  return pageExploreRender ? pageExploreRender() : `<h2>🔍 探索</h2><div class="card"><p style="color:#8b949e">探索模块加载中...</p></div>`;
+}
+// 向前兼容别名
+const pageDisplaySearch = pageDisplayExplore;
+
+// --- Content: 发布 ---
+function pageContentUpload(){
+  return `<h2>📤 发布内容</h2>
+  <div class="card">
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">标题*</label><input type="text" id="upTitle" style="flex:1" placeholder="内容标题"></div>
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">正文</label><textarea id="upBody" style="flex:1;min-height:120px" placeholder="内容正文..."></textarea></div>
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">标签</label><input id="uploadTags" placeholder="编程, AI, 入门 (逗号分隔)" style="flex:1"></div>
+    <div class="row">
+      <label style="width:60px;font-size:12px;color:#8b949e">类型</label>
+      <select id="upType"><option value="article">文章</option><option value="post">帖子</option><option value="video">视频</option><option value="image">图片</option><option value="audio">音频</option></select>
+      <label style="font-size:12px;color:#8b949e;margin-left:16px">评论权限</label>
+      <select id="upComment"><option value="all">所有人</option><option value="followers">仅粉丝</option><option value="none">关闭</option></select>
+    </div>
+    <button class="btn pri" onclick="doUpload()">发布</button>
+    <span id="upMsg" style="font-size:12px;margin-left:8px"></span>
+  </div>`;
+}
+async function doUpload(){
+  const t=document.getElementById('upTitle').value;
+  if(!t)return toast('标题不能为空','err');
+  try{
+    const d=await api('/api/content',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title:t,body:document.getElementById('upBody').value,
+        content_type:document.getElementById('upType').value,
+        comment_permission:document.getElementById('upComment').value,
+        tags:document.getElementById('uploadTags').value})
     });
+    document.getElementById('upMsg').textContent='✅ 发布成功: '+d.id;
+    document.getElementById('upTitle').value='';document.getElementById('upBody').value='';
+  }catch(e){toast('❌ '+e.message,'err')}
+}
 
-    uploadArea.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadArea.classList.remove('dragover');
-
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        selectedFile = file;
-        document.getElementById('uploadForm').classList.remove('hidden');
-        document.getElementById('uploadTitle').value = file.name.replace(/\.[^.]+$/, '');
-      }
+// --- Content: 我的内容 ---
+async function pageContentMy(){
+  let html='<h2>📝 我的内容</h2>';
+  try{
+    const items=await fetch('/api/content').then(r=>r.json());
+    if(!items.length)html+='<div class="card"><p style="color:#8b949e">暂无内容</p></div>';
+    else items.forEach(item=>{
+      html+=`<div class="card">
+        <h3>${esc(item.title)} <span class="badge ok">${esc(item.content_type)}</span></h3>
+        <p class="desc">${esc(item.description||'')} · ${fmtDate(item.created_at)}</p>
+        <div class="row"><button class="btn danger sm" onclick="delContent('${item.id}')">删除</button></div>
+      </div>`;
     });
+  }catch(e){html+='<div class="card"><p style="color:#f85149">加载失败</p></div>'}
+  return html;
+}
+async function delContent(id){
+  if(!confirm('确定删除？'))return;
+  try{await api('/api/content/'+id,{method:'DELETE'});toast('已删除');navTo('content','content_my')}
+  catch(e){toast('❌ '+e.message,'err')}
+}
 
-    // --- Utilities ---
+// --- Content: 评论管理 ---
+async function pageContentComments(){
+  let html='<h2>💬 评论管理</h2>';
+  try{
+    const items=await fetch('/api/comments?limit=50').then(r=>r.json());
+    if(!items.length)html+='<div class="card"><p style="color:#8b949e">暂无评论</p></div>';
+    else items.forEach(c=>{
+      html+=`<div class="card"><p style="font-size:13px;color:#f0f6fc">${esc(c.body)}</p>
+        <p class="desc">来自 ${esc(c.author_domain)} · ${fmtDate(c.created_at)}</p>
+        <button class="btn danger sm" onclick="delComment(${c.id})">删除</button></div>`;
+    });
+  }catch(e){html+='<div class="card"><p style="color:#f85149">加载失败</p></div>'}
+  return html;
+}
+async function delComment(id){
+  if(!confirm('删除评论？'))return;
+  try{await api('/api/comments/'+id,{method:'DELETE'});toast('已删除');navTo('content','content_comments')}
+  catch(e){toast('❌ '+e.message,'err')}
+}
 
-    function showStatus(message, type) {
-      const el = document.getElementById('status');
-      el.className = `status ${type}`;
-      el.textContent = message;
-      setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
-    }
+// --- Trade: 广告位竞价 ---
+async function pageTradeAuction(){
+  let html=`<h2>💰 广告位竞价</h2>
+  <div class="card">
+    <h3>生成新广告位</h3>
+    <div class="row">
+      <label style="font-size:12px;color:#8b949e">开始日期</label><input type="text" id="adDate" placeholder="2026-07-25" style="width:130px">
+      <label style="font-size:12px;color:#8b949e">天数</label><input type="number" id="adDays" value="7" min="1" max="30" style="width:70px">
+      <button class="btn pri" onclick="genAdSlots()">生成</button>
+    </div>
+  </div>`;
+  try{
+    const d=await api('/api/ad-slots');
+    html+=`<p style="color:#8b949e;font-size:12px;margin-bottom:8px">共 ${d.total} 个广告位</p>`;
+    (d.slots||[]).forEach(s=>{
+      const st=s.status==='sold'?'badge ok':s.status==='closed'?'badge red':'badge';
+      html+=`<div class="card">
+        <h3>广告位 #${s.slot_number} <span class="${st}">${s.status}</span></h3>
+        <p class="desc">${(s.slot_start_date||'').slice(0,10)} → ${(s.slot_end_date||'').slice(0,10)} · 当前出价: ${s.current_bid||0} · 出价方: ${esc(s.bidder_domain||'无')}</p>
+        ${s.status==='open'?`<div class="row"><input type="text" id="bid_${s.id}_domain" placeholder="你的域名" style="width:160px"><input type="number" id="bid_${s.id}_amount" placeholder="出价" min="1" style="width:80px"><button class="btn pri sm" onclick="doBid(${s.id})">出价</button></div>`:''}
+      </div>`;
+    });
+  }catch(e){html+='<div class="card"><p style="color:#f85149">加载失败</p></div>'}
+  return html;
+}
+async function genAdSlots(){
+  const d=document.getElementById('adDate').value;
+  const n=+document.getElementById('adDays').value;
+  if(!d)return toast('请填写日期','err');
+  try{
+    const r=await api('/api/ad-slots/generate',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({start_date:d,days:n})});
+    toast(`✅ 生成了 ${r.generated} 个广告位`);
+    navTo('trade','trade_auction');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function doBid(id){
+  const domain=document.getElementById('bid_'+id+'_domain').value;
+  const amount=+document.getElementById('bid_'+id+'_amount').value;
+  if(!domain||!amount)return toast('域名和金额必填','err');
+  try{await api('/api/ad-slots/'+id+'/bid',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({bidder_domain:domain,amount,public_key:''})});
+    toast('✅ 出价成功');navTo('trade','trade_auction');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
 
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
+// --- Trade: 我的地址 ---
+async function pageTradeAddresses(){
+  let html=`<h2>📍 地址簿</h2>
+  <div class="card"><h3>添加地址</h3>
+    <div class="row"><input type="text" id="addrLabel" placeholder="标签" style="width:120px"><input type="text" id="addrAddress" placeholder="地址" style="flex:1"><input type="text" id="addrChain" placeholder="链" value="ethereum" style="width:100px"><button class="btn pri sm" onclick="addAddr()">添加</button></div>
+  </div>`;
+  try{
+    const addrs=await api('/api/addresses');
+    addrs.forEach(a=>{html+=`<div class="card"><h3>${esc(a.label)} · ${esc(a.chain)}</h3><p style="font-family:monospace;font-size:12px;color:#58a6ff">${esc(a.address)}</p>
+      <button class="btn danger sm" onclick="delAddr('${a.id}')">删除</button></div>`});
+  }catch(e){html+='<div class="card"><p style="color:#8b949e">暂无地址</p></div>'}
+  return html;
+}
+async function addAddr(){
+  const l=document.getElementById('addrLabel').value,a=document.getElementById('addrAddress').value,c=document.getElementById('addrChain').value;
+  if(!l||!a)return toast('标签和地址必填','err');
+  try{await api('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:l,address:a,chain:c})});
+    toast('✅ 已添加');navTo('trade','trade_addresses');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function delAddr(id){try{await api('/api/addresses/'+id,{method:'DELETE'});toast('已删除');navTo('trade','trade_addresses')}catch(e){toast('❌ '+e.message,'err')}}
 
-    function formatSize(bytes) {
-      if (!bytes) return '0 B';
-      const units = ['B', 'KB', 'MB', 'GB'];
-      let i = 0;
-      let size = bytes;
-      while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-      return `${size.toFixed(1)} ${units[i]}`;
-    }
+// --- Trade: 积分VIP ---
+async function pageTradePoints(){
+  return `<h2>💎 积分 & VIP</h2>
+  <div class="card"><h3>发放积分</h3>
+    <div class="row"><input type="text" id="ptDomain" placeholder="域名" style="width:180px"><input type="number" id="ptAmount" placeholder="数量" min="1" style="width:80px"><input type="text" id="ptReason" placeholder="原因" style="width:120px"><button class="btn pri sm" onclick="grantPoints()">发放</button></div>
+    <div id="ptResult" style="margin-top:8px;font-size:12px;color:#8b949e"></div>
+  </div>`;
+}
+async function grantPoints(){
+  const d=document.getElementById('ptDomain').value,a=+document.getElementById('ptAmount').value,r=document.getElementById('ptReason').value;
+  if(!d||!a)return toast('域名和数量必填','err');
+  try{await api('/api/points/grant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:d,amount:a,reason:r})});
+    document.getElementById('ptResult').textContent=`✅ 已发放 ${a} 积分给 ${d}`;
+  }catch(e){toast('❌ '+e.message,'err')}
+}
 
-    function formatDate(dateStr) {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    }
+// --- Center: 设置 (no 节点身份 label) ---
+async function pageCenterSettings(){
+  let s={};
+  try{s=await api('/api/settings')}catch(e){}
+  const bool=(k,l,d)=>{
+    const v=s[k]==='true';
+    return `<div class="card"><h3>${l}</h3><p class="desc">${d}</p><div class="row">
+      <span style="font-size:12px;color:#8b949e">当前：<b style="color:${v?'#3fb950':'#f85149'}">${v?'开启':'关闭'}</b></span>
+      <label class="toggle"><input type="checkbox" data-sk="${k}" ${v?'checked':''} onchange="saveBool('${k}',this.checked)"><span class="slider"></span></label>
+    </div></div>`;
+  };
+  const num=(k,l,d,restart)=>{
+    const v=s[k]||'';
+    return `<div class="card"><h3>${l}${restart?'<span class="badge warn">需重启</span>':''}</h3><p class="desc">${d}</p>
+      <div class="row"><input type="number" id="sk_${k}" value="${v}" min="1" style="width:100px"><button class="btn pri sm" onclick="saveVal('${k}')">保存</button></div></div>`;
+  };
+  const txt=(k,l,d,opts)=>{
+    const v=s[k]||'';const pw=opts?.pw?'password':'text';
+    return `<div class="card"><h3>${l}${opts?.restart?'<span class="badge warn">需重启</span>':''}</h3><p class="desc">${d}</p>
+      <div class="row"><input type="${pw}" id="sk_${k}" value="${v}" style="width:${k==='node_domain'?'240px':'180px'}"><button class="btn pri sm" onclick="saveVal('${k}')">保存</button></div></div>`;
+  };
+  const sel=(k,l,d,opts)=>{
+    const v=s[k]||'';
+    const os=(opts||[]).map(o=>`<option value="${o}" ${o===v?'selected':''}>${o||'不使用'}</option>`).join('');
+    return `<div class="card"><h3>${l}</h3><p class="desc">${d}</p>
+      <div class="row"><select id="sk_${k}" onchange="saveVal('${k}')">${os}</select></div></div>`;
+  };
 
-    // --- Initialize ---
+  return `<h2>⚙️ 节点设置</h2>
+  ${txt('node_domain','节点域名','公开域名，用于发现和验证',{restart:true})}
+  ${num('node_port','节点端口','服务监听端口',{restart:true})}
+  ${sel('dns_provider','DNS 服务商','自动化 DNS 记录管理',['','cloudflare','dnspod','aliyun','huaweicloud','aws-route53','google-domains','namecheap','godaddy','porkbun','namesilo','cloudns','he.net'])}
+  ${txt('dns_api_key','DNS API Key','服务商 API Token',{pw:true})}
+  <div class="card"><h3>政府 CA 证书</h3><p class="desc">上传 PEM 格式 CA 证书</p>
+    <div class="row"><input type="file" id="caFile" accept=".pem,.crt,.cer" onchange="uploadCA()" style="font-size:12px"><span id="caStat" style="font-size:12px;color:#8b949e"></span></div></div>
+  ${bool('public_indexing','公共内容索引','关闭则仅展示自己内容；开启后接收推送并提供搜索')}
+  ${num('ad_slots_per_page','每页广告位数','分页展示的广告位数量')}
+  ${num('ad_reserve_days','提前预定天数','广告位展示前N天截止竞拍')}
+  ${num('ad_max_duration_days','单次最长天数','广告位最多预定天数')}
+  <div class="card" style="border-color:#3f2906"><h3>🔄 重启节点</h3><p class="desc">修改域名/端口后需重启生效（约5-10秒）</p>
+    <div class="row"><span style="font-size:12px;color:#8b949e">当前端口：<b>${PORT}</b></span><button class="btn danger" onclick="doRestart()">重启节点</button></div></div>`;
+}
 
-    (async () => {
-      try {
-        const res = await fetch('/aura/profile');
-        if (res.status === 401) {
-          document.getElementById('authBar').classList.remove('hidden');
-          showStatus('Password required. Please log in.', 'info');
-          return;
-        }
-        loadProfile();
-        loadContent();
-      } catch (err) {
-        showStatus('Connection error: ' + err.message, 'error');
-      }
-    })();
-  </script>
+// --- Center: 个人资料 ---
+async function pageCenterProfile(){
+  let n={nickname:'',bio:'',avatar:''};
+  try{n=await fetch('/kirin/profile').then(r=>r.json())}catch(e){}
+  return `<h2>👤 个人资料</h2>
+  <div class="card">
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">昵称</label><input type="text" id="pfNick" value="${esc(n.nickname||'')}" style="width:200px"></div>
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">简介</label><textarea id="pfBio" style="width:300px;min-height:60px">${esc(n.bio||'')}</textarea></div>
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">头像URL</label><input type="url" id="pfAvatar" value="${esc(n.avatar||'')}" style="width:300px"></div>
+    <div class="row"><label style="width:60px;font-size:12px;color:#8b949e">密码</label><input type="password" id="pfPass" placeholder="留空不修改" style="width:160px"></div>
+    <button class="btn pri" onclick="saveProfile()">保存</button>
+  </div>`;
+}
+async function saveProfile(){
+  const b={nickname:document.getElementById('pfNick').value,bio:document.getElementById('pfBio').value,avatar:document.getElementById('pfAvatar').value};
+  const p=document.getElementById('pfPass').value;
+  if(p&&p.length>=6)b.password=p;
+  try{await api('/kirin/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    if(p&&p.length>=6){AUTH=p;document.getElementById('authPw').value=''}
+    toast('✅ 已保存');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+
+// --- Center: 粉丝 ---
+async function pageCenterFollowers(){
+  let html='<h2>👥 粉丝管理</h2>';
+  try{
+    const list=await api('/api/followers/list');
+    if(!list.length)html+='<div class="card"><p style="color:#8b949e">暂无粉丝</p></div>';
+    else list.forEach(f=>{
+      html+=`<div class="card"><h3>${esc(f.follower_domain)}</h3><p class="desc">关注于 ${fmtDate(f.created_at)}</p>
+        <button class="btn danger sm" onclick="unfollow('${f.follower_domain}')">移除</button></div>`;
+    });
+  }catch(e){html+='<div class="card"><p style="color:#f85149">加载失败</p></div>'}
+  return html;
+}
+async function unfollow(d){try{await api('/api/followers/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({follower_domain:d})});toast('已移除');navTo('center','center_followers')}catch(e){toast('❌ '+e.message,'err')}}
+
+// --- IM: 聊天 ---
+async function pageIMChat(){
+  let groups=[];
+  try{groups=await api('/api/im/groups');}catch(e){}
+  if(!groups.length) return `<h2>💬 聊天</h2><div class="card"><p style="color:#8b949e">还没有聊天分组。先去「分组管理」创建一个吧。</p><button class="btn pri" onclick="navTo('im','im_groups')">前往分组管理</button></div>`;
+
+  let h=`<h2>💬 聊天</h2><div style="display:flex;gap:12px;min-height:400px">
+    <div style="width:200px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px">
+      <p style="color:#8b949e;font-size:12px;margin-bottom:8px">分组列表</p>`;
+  groups.forEach((g,i)=>{
+    h+=`<div class="im-group-item" onclick="selectIMGroup(${g.id},'${esc(g.group_name)}')" style="padding:6px 8px;cursor:pointer;border-radius:4px;color:#c9d1d9;font-size:13px;margin-bottom:2px;"
+      data-gid="${g.id}">${esc(g.group_name)} <span style="font-size:10px;color:#8b949e">${g.member_count||0}人</span></div>`;
+  });
+  h+=`</div>
+    <div id="imChatArea" style="flex:1;background:#161b22;border:1px solid #30363d;border-radius:8px;display:flex;flex-direction:column">
+      <div id="imChatHeader" style="padding:10px 14px;border-bottom:1px solid #30363d;color:#f0f6fc;font-size:14px">请选择一个分组开始聊天</div>
+      <div id="imMessages" style="flex:1;overflow-y:auto;padding:12px;font-size:13px;color:#8b949e">
+        <p style="text-align:center;margin-top:100px">👈 选择左侧分组即可开始</p>
+      </div>
+      <div style="padding:10px;border-top:1px solid #30363d;display:flex;gap:8px">
+        <input type="text" id="imMsgInput" placeholder="输入消息..." style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:8px 12px;font-size:13px" onkeydown="if(event.key==='Enter')sendIMMsg()" disabled>
+        <button class="btn pri sm" id="imSendBtn" onclick="sendIMMsg()" disabled style="width:60px">发送</button>
+      </div>
+    </div></div>`;
+  h+=`<script>window._imSelected=null;window._imGroups=${JSON.stringify(groups)}</script>`;
+  return h;
+}
+
+let _imSelectedGroup = null;
+function selectIMGroup(id,name){
+  _imSelectedGroup = id;
+  document.getElementById('imChatHeader').textContent = '💬 '+name;
+  document.getElementById('imMessages').innerHTML = '<p style="text-align:center;margin-top:40px;color:#8b949e">消息功能开发中。先用分组管理和交易密钥完成通信协商。</p>';
+  document.getElementById('imMsgInput').disabled = false;
+  document.getElementById('imSendBtn').disabled = false;
+  document.querySelectorAll('.im-group-item').forEach(el=>el.style.background=el.dataset.gid==id?'#1f2937':'');
+}
+function sendIMMsg(){
+  const msg=document.getElementById('imMsgInput').value.trim();
+  if(!msg||!_imSelectedGroup)return;
+  const area=document.getElementById('imMessages');
+  area.innerHTML+=`<div style="margin-bottom:8px;text-align:right"><span style="background:#238636;color:#fff;padding:6px 12px;border-radius:12px;font-size:13px;display:inline-block;max-width:70%">${esc(msg)}</span></div>`;
+  document.getElementById('imMsgInput').value='';
+  area.scrollTop=area.scrollHeight;
+}
+
+// --- IM: 分组管理 ---
+async function pageIMGroups(){
+  let html=`<h2>📋 分组管理</h2>
+  <div class="card"><h3>创建分组</h3>
+    <div class="row"><input type="text" id="imName" placeholder="分组名称" style="width:200px"><select id="imType"><option value="friend">好友</option><option value="trade">交易</option><option value="custom">自定义</option></select><button class="btn pri sm" onclick="createIMGroup()">创建</button></div>
+  </div>`;
+  try{
+    const data=await api('/api/im/groups');
+    const groups=data.groups||data||[];
+    if(!groups.length)html+='<div class="card"><p style="color:#8b949e">暂无分组，创建一个吧</p></div>';
+    else groups.forEach(g=>{
+      const typeLabel={friend:'👥 好友',trade:'💱 交易',custom:'📌 自定义'}[g.group_type]||g.group_type;
+      html+=`<div class="card" style="cursor:pointer" onclick="navTo('im','im_chat');selectIMGroup(${g.id},'${esc(g.group_name)}')">
+        <h3>${esc(g.group_name)} <span class="badge ok">${typeLabel}</span></h3>
+        <p class="desc">${g.member_count||0} 成员 · 创建于 ${fmtDate(g.created_at)}</p>
+        <div class="row" style="margin-top:8px;gap:6px">
+          <button class="btn pri sm" onclick="event.stopPropagation();addIMMember(${g.id})">+ 添加成员</button>
+          <button class="btn danger sm" onclick="event.stopPropagation();delIMGroup(${g.id})">删除</button>
+        </div>
+      </div>`;
+    });
+  }catch(e){html+=`<div class="card"><p style="color:#f85149">加载失败: ${e.message}</p></div>`}
+  return html;
+}
+async function createIMGroup(){
+  const n=document.getElementById('imName').value,t=document.getElementById('imType').value;
+  if(!n)return toast('名称必填','err');
+  try{await api('/api/im/groups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({group_name:n,group_type:t,members:[]})});
+    toast('✅ 已创建');navTo('im','im_groups');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function addIMMember(id){
+  const domain=prompt('输入域名:');
+  if(!domain)return;
+  try{await api('/api/im/groups/'+id+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain})});
+    toast('✅ 已添加');navTo('im','im_groups');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function delIMGroup(id){
+  if(!confirm('删除分组？'))return;
+  try{await api('/api/im/groups/'+id,{method:'DELETE'});toast('已删除');navTo('im','im_groups')}catch(e){toast('❌ '+e.message,'err')}
+}
+
+// --- IM: 交易密钥 ---
+async function pageIMKeys(){
+  let html=`<h2>🔑 交易密钥</h2>
+  <div class="card"><h3>生成临时交易密钥</h3><p class="desc">90天有效期，对方接受后自动创建交易分组</p>
+    <div class="row"><input type="text" id="tkDomain" placeholder="对方域名" style="width:200px"><input type="text" id="tkKey" placeholder="公钥/密钥" style="width:280px"><select id="tkPurpose"><option value="trade">交易</option><option value="friends">好友</option><option value="other">其他</option></select><button class="btn pri sm" onclick="createTempKey()">生成</button></div>
+  </div>`;
+  try{
+    const data=await api('/api/im/temp-keys');
+    const keys=data.keys||data||[];
+    if(!keys.length)html+='<div class="card"><p style="color:#8b949e">暂无密钥</p></div>';
+    else keys.forEach(k=>{
+      const statusColor={pending:'#d2991d',active:'#3fb950',revoked:'#f85149',expired:'#8b949e'};
+      html+=`<div class="card">
+        <h3>${esc(k.to_domain)} <span style="color:${statusColor[k.status]||'#8b949e'};font-size:12px">● ${k.status}</span></h3>
+        <p class="desc">用途: ${k.purpose||'trade'} · 过期: ${fmtDate(k.expires_at)}</p>
+        <p style="font-size:11px;color:#484f58;word-break:break-all;margin-top:4px">${esc((k.temp_public_key||'').substring(0,80))}...</p>
+        <div class="row" style="margin-top:6px;gap:6px">`;
+      if(k.status==='pending')html+=`<button class="btn pri sm" onclick="acceptTempKey(${k.id})">接受</button><button class="btn danger sm" onclick="revokeTempKey(${k.id})">撤销</button>`;
+      if(k.status==='active')html+=`<button class="btn danger sm" onclick="revokeTempKey(${k.id})">撤销</button>`;
+      html+=`</div></div>`;
+    });
+  }catch(e){html+=`<div class="card"><p style="color:#f85149">加载失败: ${e.message}</p></div>`}
+  return html;
+}
+async function createTempKey(){
+  const d=document.getElementById('tkDomain').value,k=document.getElementById('tkKey').value,p=document.getElementById('tkPurpose').value;
+  if(!d||!k)return toast('域名和密钥必填','err');
+  try{await api('/api/im/temp-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_domain:d,temp_public_key:k,purpose:p})});
+    toast('✅ 已生成');navTo('im','im_keys');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function acceptTempKey(id){try{await api('/api/im/temp-key/'+id+'/accept',{method:'POST'});toast('✅ 已接受，交易分组已创建');navTo('im','im_keys')}catch(e){toast('❌ '+e.message,'err')}}
+async function revokeTempKey(id){try{await api('/api/im/temp-key/'+id+'/revoke',{method:'POST'});toast('已撤销');navTo('im','im_keys')}catch(e){toast('❌ '+e.message,'err')}}
+
+// ======================== Settings helpers =================
+async function saveBool(k,v){
+  try{const d=await api('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({[k]:v?'true':'false'})});
+    toast('✅ '+(v?'已开启':'已关闭'));navTo('center','center_settings');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function saveVal(k){
+  const el=document.getElementById('sk_'+k);
+  if(!el)return;
+  try{const d=await api('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({[k]:el.value})});
+    const extra=d.restart_needed?' (需重启)':'';
+    toast('✅ 已保存: '+el.value+extra);navTo('center','center_settings');
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+async function uploadCA(){
+  const f=document.getElementById('caFile').files[0];
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    try{await api('/kirin/ca-cert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pem:reader.result})});
+      document.getElementById('caStat').textContent='✅ '+f.name;toast('CA已上传，需重启');
+    }catch(e){toast('❌ '+e.message,'err')}
+  };
+  reader.readAsText(f);
+}
+async function doRestart(){
+  if(!confirm('确定重启？'))return;
+  try{await api('/kirin/restart',{method:'POST'});toast('🔄 重启中...');setTimeout(()=>location.reload(),6000)}
+  catch(e){setTimeout(()=>location.reload(),6000)}
+}
+
+// ======================== Event binding ====================
+function bindEvents(key){
+  // explore page handles its own events via pages_explore.js
+  if(key==='display_explore' && typeof bindExploreEvents === 'function'){
+    bindExploreEvents();
+  }
+  if(key==='explore_directions' && typeof loadExploreDirectionsList === 'function'){
+    loadExploreDirectionsList();
+  }
+  if(key==='explore_blacklist' && typeof loadExploreBlacklistList === 'function'){
+    loadExploreBlacklistList();
+  }
+}
+
+// ======================== Utilities =======================
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function fmtDate(s){if(!s)return'';return new Date(s).toLocaleDateString('zh-CN')}
+function toast(m,err){const t=document.getElementById('toast');t.textContent=m;t.className='toast show'+(err?' err':'');setTimeout(()=>t.className='toast',2500)}
+function showToast(m,err){toast(m,err)}
+
+function doLogout(){
+  localStorage.removeItem('kirin_auth');
+  localStorage.removeItem('kirin_auth_ts');
+  location.href = '/';
+}
+</script>
+<script src="pages_content.js"></script>
+<script src="pages_trade.js"></script>
+<script src="pages_im.js"></script>
+<script src="pages_display.js"></script>
+<script src="pages_explore.js"></script>
+<script src="pages_center.js"></script>
 </body>
 </html>

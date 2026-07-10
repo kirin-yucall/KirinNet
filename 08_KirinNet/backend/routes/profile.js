@@ -1,149 +1,57 @@
-// ============================================================================
-// KirinNet — Profile API
-//
-// GET /api/v1/profile/:domain          — user profile + KirinDNS resolution
-// GET /api/v1/profile/:domain/content  — user's published content
-// Matches api_contract.md Section 4.
-// ============================================================================
+// KirinNet — Profile API (DuckDB)
 const express = require('express');
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
 // GET /api/v1/profile/:domain
-// ---------------------------------------------------------------------------
-router.get('/profile/:domain', async (req, res, next) => {
+router.get('/profile/:domain', async (req, res) => {
   try {
-    const { pool } = require('../server');
-    const { domain } = req.params;
+    const db = req.app.locals.db;
+    const user = await db.get(
+      'SELECT id, domain, display_name, avatar, bio, role, created_at FROM users WHERE domain = ?',
+      req.params.domain
+    );
+    if (!user) return res.status(404).json({ error: 'not_found', message: 'User not found' });
 
-    // Look up user
-    const userResult = await pool.query(
-      'SELECT id, domain, public_key, display_name, bio, avatar_cid, created_at FROM users WHERE domain = $1',
-      [domain]
+    const counts = await db.get(
+      'SELECT COUNT(*) AS content_count FROM content WHERE creator_domain = ? AND is_indexed = true',
+      req.params.domain
     );
 
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'profile_not_found',
-        message: `No user registered for domain '${domain}'`,
-      });
-    }
-
-    const user = userResult.rows[0];
-
-    // Count content and views
-    const stats = await pool.query(
-      'SELECT COUNT(*) AS content_count, COALESCE(SUM(view_count), 0) AS total_views FROM content WHERE creator_domain = $1 AND is_indexed = true',
-      [domain]
-    );
-
-    // Get recent content
-    const contentResult = await pool.query(
-      `SELECT id, cid, storage_type, title, category, tags, view_count, is_indexed, created_at
-       FROM content
-       WHERE creator_domain = $1 AND is_indexed = true
-       ORDER BY created_at DESC
-       LIMIT 20`,
-      [domain]
-    );
-
-    const content = contentResult.rows.map(row => ({
-      content_id: String(row.id),
-      title: row.title,
-      cid: row.cid,
-      storage_type: row.storage_type,
-      category: row.category,
-      tags: row.tags || [],
-      view_count: row.view_count || 0,
-      created_at: row.created_at,
-      direct_url: row.storage_type === 'ipfs'
-        ? `https://gateway.kirinnet.org/ipfs/${row.cid}`
-        : `https://arweave.net/${row.cid}`,
-    }));
-
-    res.json({
-      domain: user.domain,
-      name: user.display_name || domain,
-      bio: user.bio || null,
-      public_key: user.public_key,
-      avatar_url: user.avatar_cid
-        ? `https://gateway.kirinnet.org/ipfs/${user.avatar_cid}`
-        : null,
-      content_count: parseInt(stats.rows[0].content_count, 10),
-      total_views: parseInt(stats.rows[0].total_views, 10),
-      joined_at: user.created_at,
-      content,
-    });
-  } catch (err) {
-    next(err);
-  }
+    res.json({ ...user, content_count: counts.content_count });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ---------------------------------------------------------------------------
 // GET /api/v1/profile/:domain/content
-// ---------------------------------------------------------------------------
-router.get('/profile/:domain/content', async (req, res, next) => {
+router.get('/profile/:domain/content', async (req, res) => {
   try {
-    const { pool } = require('../server');
-    const { domain } = req.params;
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
-    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const includeDeindexed = req.query.include_de_indexed === 'true';
+    const db = req.app.locals.db;
+    const limit = Math.min(+req.query.limit || 20, 100);
+    const offset = Math.max(+req.query.offset || 0, 0);
 
-    // Check user exists
-    const userResult = await pool.query('SELECT id FROM users WHERE domain = $1', [domain]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'profile_not_found',
-        message: `No user registered for domain '${domain}'`,
-      });
-    }
-
-    // Build query
-    let whereClause = 'creator_domain = $1';
-    const params = [domain];
-    let paramIdx = 2;
-
-    if (!includeDeindexed) {
-      whereClause += ' AND is_indexed = true';
-    }
-
-    // Count total
-    const countResult = await pool.query(
-      `SELECT COUNT(*) AS total FROM content WHERE ${whereClause}`,
-      [domain]
+    const content = await db.all(
+      'SELECT * FROM content WHERE creator_domain = ? AND is_indexed = true ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      req.params.domain, limit, offset
     );
-    const total = parseInt(countResult.rows[0].total, 10);
+    const total = (await db.get('SELECT COUNT(*) AS total FROM content WHERE creator_domain = ? AND is_indexed = true', req.params.domain)).total;
 
-    // Fetch results
-    const result = await pool.query(
-      `SELECT id, cid, storage_type, title, category, tags, view_count, is_indexed, created_at
-       FROM content
-       WHERE ${whereClause}
-       ORDER BY created_at DESC
-       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      [domain, limit, offset]
-    );
+    res.json({ domain: req.params.domain, total, limit, offset, content });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-    const results = result.rows.map(row => ({
-      content_id: String(row.id),
-      title: row.title,
-      cid: row.cid,
-      storage_type: row.storage_type,
-      category: row.category,
-      tags: row.tags || [],
-      view_count: row.view_count || 0,
-      is_indexed: row.is_indexed,
-      created_at: row.created_at,
-      direct_url: row.storage_type === 'ipfs'
-        ? `https://gateway.kirinnet.org/ipfs/${row.cid}`
-        : `https://arweave.net/${row.cid}`,
-    }));
+// PUT /api/v1/profile/:domain (authenticated by token matching domain)
+router.put('/profile/:domain', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { display_name, bio } = req.body;
 
-    res.json({ total, limit, offset, results });
-  } catch (err) {
-    next(err);
-  }
+    const user = await db.get('SELECT id FROM users WHERE domain = ?', req.params.domain);
+    if (!user) return res.status(404).json({ error: 'not_found' });
+
+    if (display_name !== undefined) await db.run('UPDATE users SET display_name = ? WHERE domain = ?', display_name, req.params.domain);
+    if (bio !== undefined) await db.run('UPDATE users SET bio = ? WHERE domain = ?', bio, req.params.domain);
+
+    res.json({ message: 'Profile updated', domain: req.params.domain });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

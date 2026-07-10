@@ -1,23 +1,20 @@
 {
   "name": "kirinnet-platform",
-  "version": "0.1.0",
-  "description": "KirinNet Platform — decentralized content indexer and API",
+  "version": "0.3.0",
+  "description": "KirinNet Platform — decentralized content indexer with DuckDB + FS",
   "private": true,
   "main": "backend/server.js",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",
-    "db:migrate": "psql $DATABASE_URL -f backend/schema.sql",
     "test": "echo \"Tests: not yet implemented\" && exit 0"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "express-rate-limit": "^8.5.2",
-    "pg": "^8.13.0"
+    "duckdb": "^1.4.4",
+    "express": "^4.21.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }
