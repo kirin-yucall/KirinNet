@@ -151,6 +151,69 @@ router.get('/ca-cert', async (_req, res) => {
   res.json({ uploaded: uploaded === 'true' && exists, path: caPath || null });
 });
 
+// ---- Password Recovery (localhost-only trigger) -----------------------------
+
+// POST /api/request-recovery — generate recovery code (localhost only)
+// Usage: docker exec -it <container> curl -s http://localhost:8080/api/request-recovery
+router.post('/request-recovery', async (req, res) => {
+  // Only allow from localhost — requires docker exec access
+  const ip = req.ip || req.socket.remoteAddress || '';
+  if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
+    return res.status(403).json({ error: 'forbidden', message: '此端点仅可从容器内部访问。请使用: docker exec -it <容器> curl http://localhost:8080/api/request-recovery' });
+  }
+
+  try {
+    const crypto = require('crypto');
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    const bytes = crypto.randomBytes(6);
+    for (let i = 0; i < 6; i++) code += chars[bytes[i] % chars.length];
+
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    await db.setSetting('recovery_code', JSON.stringify({ code, expires_at: expiresAt }));
+
+    console.log(`[Recovery] Code generated: ${code} (expires in 10 min)`);
+    res.json({ recovery_code: code, expires_in: '10 minutes', usage: '在登录页点击「忘记密码？」输入此码' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reset-password — verify recovery code + set new password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { code, password } = req.body;
+    if (!code || !password || password.length < 6) {
+      return res.status(400).json({ error: 'bad_request', message: 'Recovery code + new password (>=6 chars) required' });
+    }
+
+    const raw = await db.getSetting('recovery_code');
+    if (!raw) return res.status(400).json({ error: 'no_recovery_code', message: '没有活跃的恢复码。请运行: docker exec -it <容器> curl http://localhost:8080/api/request-recovery' });
+
+    let stored;
+    try { stored = JSON.parse(raw); } catch(e) {
+      return res.status(400).json({ error: 'invalid_recovery_code' });
+    }
+
+    if (Date.now() > stored.expires_at) {
+      await db.setSetting('recovery_code', '');
+      return res.status(400).json({ error: 'expired', message: '恢复码已过期（10分钟）。请重新生成' });
+    }
+
+    if (code.toUpperCase() !== stored.code.toUpperCase()) {
+      return res.status(400).json({ error: 'invalid_code', message: '恢复码不正确' });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    await db.run('UPDATE node SET password = ?', hash);
+    await db.setSetting('recovery_code', '');
+
+    res.json({ status: 'ok', message: '密码已重置，请用新密码登录' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- Content feed (public) --------------------------------------------------
 
 // (handled by content.js router — this file provides requireAuth/isNodeInit)

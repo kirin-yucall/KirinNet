@@ -9,7 +9,7 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:40px;width:100%;max-width:380px;text-align:center}
 .logo{font-size:28px;font-weight:700;color:#58a6ff;margin-bottom:4px}
-.sub{color:#8b949e;font-size:13px;margin-bottom:24px}
+.sub{color:#8b949e;font-size:13px;margin-bottom:4px}
 .domain{color:#3fb950;font-size:12px;margin-bottom:20px;background:#0d1117;padding:4px 12px;border-radius:10px;display:inline-block}
 input{width:100%;padding:12px 16px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:16px;text-align:center;margin-bottom:12px}
 input:focus{outline:none;border-color:#58a6ff}
@@ -19,6 +19,13 @@ input:focus{outline:none;border-color:#58a6ff}
 .msg{margin-top:12px;font-size:13px;min-height:20px}
 .msg.err{color:#f85149}
 .msg.ok{color:#3fb950}
+.link{color:#58a6ff;font-size:12px;cursor:pointer;margin-top:16px;display:inline-block;text-decoration:none}
+.link:hover{text-decoration:underline}
+#recovery{display:none;margin-top:20px;padding-top:20px;border-top:1px solid #30363d}
+#recovery .hint{font-size:11px;color:#8b949e;margin-bottom:12px;line-height:1.5}
+#recovery input{font-size:20px;letter-spacing:6px}
+.back{color:#8b949e;font-size:12px;cursor:pointer;margin-top:8px;display:inline-block}
+.back:hover{color:#c9d1d9}
 </style>
 </head>
 <body>
@@ -26,15 +33,33 @@ input:focus{outline:none;border-color:#58a6ff}
   <div class="logo">🦄 KirinNet</div>
   <p class="sub">管理登录</p>
   <p class="domain" id="domainLabel">加载中...</p>
-  <input type="password" id="password" placeholder="输入管理密码" autofocus onkeydown="if(event.key==='Enter')login()">
-  <button class="btn" id="submit" onclick="login()">登录</button>
-  <div id="msg" class="msg"></div>
+
+  <!-- Normal login -->
+  <div id="loginBox">
+    <input type="password" id="password" placeholder="输入管理密码" autofocus onkeydown="if(event.key==='Enter')login()">
+    <button class="btn" id="submit" onclick="login()">登录</button>
+    <div id="msg" class="msg"></div>
+    <a class="link" onclick="showRecovery()">忘记密码？</a>
+  </div>
+
+  <!-- Recovery -->
+  <div id="recovery">
+    <p class="hint">
+      先在终端运行：<br>
+      <code style="color:#58a6ff;font-size:11px">docker exec -it 容器名 curl http://localhost:8080/api/request-recovery</code><br>
+      将显示的 6 位恢复码输入下方
+    </p>
+    <input type="text" id="recoveryCode" placeholder="恢复码" maxlength="6" autocomplete="off">
+    <input type="password" id="newPassword" placeholder="新密码（≥6位）">
+    <button class="btn" onclick="doRecovery()">重置密码</button>
+    <div id="recoveryMsg" class="msg"></div>
+    <a class="back" onclick="hideRecovery()">← 返回登录</a>
+  </div>
 </div>
 
 <script>
 const H72 = 72 * 3600 * 1000;
 const H48 = 48 * 3600 * 1000;
-const H24 = 24 * 3600 * 1000;
 
 async function init(){
   try{
@@ -43,7 +68,6 @@ async function init(){
     if(!d.initialized){location.href='/init.html';return}
     document.getElementById('domainLabel').textContent=d.domain||'未设域名';
 
-    // Auto-login if within 48h window
     const auth = localStorage.getItem('kirin_auth');
     const ts = parseInt(localStorage.getItem('kirin_auth_ts')||'0');
     if(auth && ts){
@@ -61,7 +85,6 @@ async function init(){
         document.getElementById('msg').textContent='会话已过期（>72h），请重新登录';
         return;
       }
-      // 48h <= age < 72h: cold start, must re-login
       document.getElementById('msg').className='msg';
       document.getElementById('msg').textContent='超过48小时未使用，请重新登录';
     }
@@ -87,6 +110,49 @@ async function login(){
     msg.className='msg err';msg.textContent='❌ 密码错误';
     btn.disabled=false;btn.textContent='登录';
     document.getElementById('password').value='';
+  }
+}
+
+function showRecovery(){
+  document.getElementById('loginBox').style.display='none';
+  document.getElementById('recovery').style.display='block';
+  document.getElementById('recoveryMsg').className='msg';
+  document.getElementById('recoveryMsg').textContent='';
+}
+
+function hideRecovery(){
+  document.getElementById('loginBox').style.display='block';
+  document.getElementById('recovery').style.display='none';
+}
+
+async function doRecovery(){
+  const code = document.getElementById('recoveryCode').value.trim();
+  const pw = document.getElementById('newPassword').value;
+  const msg = document.getElementById('recoveryMsg');
+
+  if(!code || code.length!==6){msg.className='msg err';msg.textContent='请输入6位恢复码';return}
+  if(!pw || pw.length<6){msg.className='msg err';msg.textContent='新密码至少6位';return}
+
+  try{
+    const r=await fetch('/api/reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code,password:pw})
+    });
+    const d=await r.json();
+    if(r.ok){
+      msg.className='msg ok';
+      msg.textContent='✅ '+d.message;
+      document.getElementById('recoveryCode').value='';
+      document.getElementById('newPassword').value='';
+      setTimeout(hideRecovery,2000);
+    }else{
+      msg.className='msg err';
+      msg.textContent='❌ '+d.message;
+    }
+  }catch(e){
+    msg.className='msg err';
+    msg.textContent='❌ 网络错误，请重试';
   }
 }
 

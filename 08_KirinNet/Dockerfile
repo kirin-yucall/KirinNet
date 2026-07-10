@@ -1,26 +1,25 @@
-FROM kirinnet-user-node
+FROM node:20-slim
 
 WORKDIR /app
 
-# Remove user-node source, keep node_modules
-RUN rm -rf server.js models routes public
+# Install deps
+COPY package.json .
+RUN npm install --production && npm cache clean --force
 
-# Install additional deps (cors)
-RUN npm install cors --production
+# Copy source
+COPY backend/   ./backend/
+COPY models/    ./models/
+COPY public/    ./public/
+COPY utils/     ./utils/
 
-# Copy platform source
-COPY backend/ ./backend/
-COPY models/  ./models/
-COPY public/  ./public/
-COPY utils/   ./utils/
-
+# Create data directories for DuckDB + media files
 RUN mkdir -p /app/data/duckdb /app/data/media
 
 EXPOSE 3000
 
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data
-ENV JWT_SECRET=change-me-in-production
+ENV JWT_SECRET=change-in-production-use-random-string
 
 VOLUME ["/app/data"]
 

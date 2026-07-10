@@ -150,54 +150,66 @@ KirinDNS_Project/
 │   │   └── settings.html  # Settings panel (legacy, SPA supersedes)
 │   ├── models/
 │   │   └── database.js    # DuckDB schema (all tables)
-│   └── routes/            # API route modules
+│   └── routes/            # 22 个 API 路由模块
 │       ├── kirin.js       # Init, profile, restart, CA cert
-│       ├── content.js     # Content CRUD + comments
-│       ├── im.js          # IM groups + temp trade keys
-│       ├── addresses.js   # Marketplace addresses
-│       ├── followers.js   # Follower subscriptions + encrypted push
-│       ├── monetize.js    # Points + VIP paywall
-│       ├── push.js        # Push to other nodes (DOH verification)
-│       ├── ad-auction.js  # Ad slot bidding system
-│       ├── indexer.js     # Public search/aggregation + blacklist + admin
-│       ├── settings.js    # Runtime settings API
-│       └── dns.js         # DNS record management (12 providers)
-└── 08_KirinNet/           # (deprecated — merged into 07_User_Node)
+│       ├── content.js     # 内容 CRUD + tags + 分段去重哈希
+│       ├── im.js          # IM 分组 + 成员管理
+│       ├── im_messages.js # 群聊 + 私聊消息
+│       ├── explore.js     # 探索系统（方向/爬取/黑名单）
+│       ├── drafts.js      # 草稿箱
+│       ├── cart.js        # 购物车
+│       ├── favorites.js   # 收藏
+│       ├── history.js     # 足迹
+│       ├── orders.js      # 订单
+│       ├── coupons.js     # 优惠券
+│       ├── payment_methods.js  # 支付方式
+│       ├── contacts.js    # 联系人
+│       ├── notifications.js    # 通知
+│       ├── addresses.js   # 收货地址
+│       ├── followers.js   # 粉丝系统 + 加密推送
+│       ├── monetize.js    # 积分 + VIP
+│       ├── push.js        # DOH 验证推送
+│       ├── ad-auction.js  # 广告位竞价
+│       ├── indexer.js     # 公共索引
+│       ├── settings.js    # 运行时设置
+│       └── dns.js         # DNS 管理 (12 providers)
+├── 08_KirinNet/           # 公共索引器源码（已整合进 07_User_Node）
+├── 09_Pub_Aggregator/     # 聚合爬虫源码（已整合进 07_User_Node）
 ```
 
 ---
 
-## KirinNet Node
+## KirinNet 用户节点
 
-One Docker image, all capabilities built-in — content hosting, IM groups,
-ad slot auctions, follower subscriptions, points/VIP monetization,
-public indexing with blacklist management, and DNS record management.
+**一个镜像，全部能力。** 07_User_Node/ 是唯一的用户节点源码，
+整合了索引器（08_KirinNet）和聚合爬虫（09_Pub_Aggregator）的全部功能。
 
-**Flow:** First visit → setup password → login gate → SPA main interface.
-Password is required every time you open the node (stored in sessionStorage only).
+**流程:** 首次访问 → 设置密码 → 登录 → SPA 主界面。
+登录态 localStorage 持久化 72 小时。
 
 Quick start:
 
 ```bash
 docker run -d --name my-node --restart unless-stopped \
   -p 8080:8080 -v ./data:/app/data \
-  kirin-yucall/kirinnet-node
+  kirinnet-node:latest
 ```
 
-Then open `http://localhost:8080/`, follow the init wizard, and login.
+然后打开 `http://localhost:8080/`，完成初始化向导。
 
-**Key features:**
-- 🏠 Content hosting + media storage
-- 💬 IM groups + encrypted trade key exchange
-- 📢 Ad slot auction — bids from any domain, revenue is yours
-- 👥 Follower subscriptions with auto-encrypted push
-- 💰 Points + VIP paywall for monetization
-- 🔍 Public indexing with domain blacklist + content moderation
-- 🌐 DNS record management (12 providers)
-- ⚙️ All controls in the SPA — no CLI needed
+**核心功能:**
+- 🏠 内容发布 + 标签 + 弹性分段 SHA-256 去重
+- 🔍 探索系统（方向驱动主动探知，替代搜索）
+- 💬 IM 群聊 + 私聊 + 交易密钥
+- 📢 广告位竞拍（收入归节点主人）
+- 👥 粉丝订阅 + 自动加密推送
+- 💰 积分 + VIP 变现
+- 🛒 购物车/订单/优惠券/支付方式
+- 🔗 公共索引 + 域名黑名单
+- 🌐 DNS 管理（12 家服务商）
+- ⚙️ 所有设置 Web UI 实时切换，重启持久化
 
-See [`07_User_Node/spec.md`](07_User_Node/spec.md) for the full specification and
-[`07_User_Node/api.md`](07_User_Node/api.md) for the complete API reference.
+详见 [`07_User_Node/README.md`](07_User_Node/README.md) 和 [`07_User_Node/api.md`](07_User_Node/api.md)。
 
 ---
 
