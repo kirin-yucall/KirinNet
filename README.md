@@ -130,11 +130,22 @@ KirinDNS_Project/
 ├── 01_Standard/           # Protocol specification
 │   ├── spec_v1.md         # ADRP specification (RFC-style)
 │   └── compatibility.md   # Compatibility notes
-├── 02_Libraries/          # Client library implementations
-│   ├── python/            # Python library (dnspython)
-│   ├── javascript/        # Node.js library
-│   ├── go/                # Go library
-│   └── rust/              # Rust library
+├── 02_Libraries/          # 15 语言客户端库（ADRP 协议实现）
+│   ├── python/            # Python (dnspython) ✅ 已测试
+│   ├── javascript/        # Node.js ✅ 已测试
+│   ├── go/                # Go 1.21+ ✅ 语法通过
+│   ├── rust/              # Rust (trust-dns) ✅ 语法通过
+│   ├── c/                 # C99 (libresolv) ✅ 已测试
+│   ├── cpp/               # C++17 header-only ✅ 已测试
+│   ├── csharp/            # C# (.NET 6+)
+│   ├── java/              # Java (JDK 11+)
+│   ├── kotlin/            # Kotlin/JVM
+│   ├── dart/              # Dart 3.0+
+│   ├── ruby/              # Ruby (stdlib)
+│   ├── swift/             # Swift (Foundation)
+│   ├── php/               # PHP 8.0+
+│   ├── lua/               # Lua 5.1+ (luasocket)
+│   └── typescript/        # TypeScript 类型定义
 ├── 03_Browser_Extension/  # Chrome Extension (Manifest V3)
 ├── 04_Chromium_Browser/   # Custom Chromium build instructions
 ├── 05_Adoption/           # IETF roadmap, GTM strategy, demo sites
