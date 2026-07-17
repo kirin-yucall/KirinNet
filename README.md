@@ -1,291 +1,216 @@
-# KirinNet
-KirinNet：专为 Web3 打造的下一代网络解析协议。基于 SRV 记录智能寻址 + TXT 身份验证，无缝兼容传统网络。在 KirinNet 中，域名即身份，无需密码与繁琐注册。构建完全去中心化的内容与通信生态，数据绝对主权，资料随节点完美迁移，彻底告别封号与审查。开源解析库，诚邀浏览器原生接入。
+# KirinNet 麒麟网
 
-# KirinDNS — Port-Aware DNS Resolution for the Modern Web
+> 去中心化身份与节点网络 — 域名即身份，为人和 AI 智能体共享。
 
-**The Internet is more than just port 80 and 443.**
+KirinNet 是一个完全去中心化的网络协议和节点实现。每个域名就是一个通用、自证的身份容器——无论持有私钥的是人还是 AI 智能体，协议层不做任何区分。
 
-KirinDNS (ADRP) is a lightweight DNS-based protocol that lets clients discover
-the actual listening ports of HTTP/HTTPS/WebSocket services through standard
-DNS SRV records, and user identity via DNS TXT records. It enables seamless
-access to services running on non-standard ports without requiring users to
-type port numbers in URLs.
-
-```
-https://dapp.example.com  ->  automatically resolves to port 8443 via ADRP
-```
-
-No code changes. No new DNS record types. No breaking changes.
+**不需要中心化 CA。不需要用户注册。不需要密码。** DNS 就是你的身份层，Ed25519 私钥就是你的证明。
 
 ---
 
-## Why KirinDNS?
+## 愿景 (Vision)
 
-### The Problem
+我们坚信 Web3 技术应该服务于最广大人民的根本利益。
 
-Many services run on non-standard ports:
-- Web3 dApp development servers on port 3000
-- IPFS gateways on port 8080
-- Corporate internal services on port 8443
-- Multi-tenant platforms sharing a single IP across different ports
+本协议致力于：
 
-Today, users must know the port number and type it manually:
-`https://gateway.ipfs.example.com:8080` — a poor user experience.
-
-### The Solution
-
-ADRP encodes port information in SRV records and identity in TXT records:
-
-```
-; SRV records for service discovery
-_kirinnet-http._tcp.example.com.  IN  SRV  0 0 8080 example.com.
-_kirinnet-https._tcp.example.com. IN  SRV  0 0 8443 example.com.
-
-; TXT record for identity
-id=550e8400-e29b-41d4-a716-446655440000;key=04abc...;nick=Alice
-```
-
-An ADRP-aware client queries these records before connecting, discovers the
-correct port via SRV and identity via TXT, then connects transparently.
-
-### Key Properties
-
-- **Zero infrastructure changes** — uses standard DNS SRV and TXT records
-- **Backward compatible** — domains without KirinDNS SRV records fall back to standard ports
-- **Typed service discovery** — SRV records natively express priority/weight/port
-- **Identity built-in** — TXT records carry user identity (UUID, public key, nickname)
-- **Encrypted DNS** — all ADRP queries use DoH/DoT
-- **No new DNS record types** — no resolver changes needed
+- **可信与平等**：构建一个摒弃算力霸权、回归用户自主的信任基石。
+- **务实与共赢**：拒绝空中楼阁般的金融炒作，聚焦解决实体经济与社会治理中的真实痛点。
+- **青年担当**：这是一个由中国青年发起的前沿探索，我们立志用一行行严谨的代码，在世界科技舞台上展现中国智慧。
 
 ---
 
-## Quick Start
+## 为什么选择 DID-DNS
 
-### Python
+| 传统体系 | 问题 | DID-DNS 方案 |
+|---|---|---|
+| OAuth / OpenID Connect | 假设浏览器背后有人点"允许" | 密码学自证：谁有私钥谁是合法拥有者 |
+| API Key | 不记名凭证，泄露即失控 | Ed25519 签名，密码学归属证明 |
+| mTLS / x.509 | 依赖中心化 CA 签发和撤销 | DNSSEC/DoH 保护，零 CA |
+| KYC 实名认证 | 只适用于法律主体 | 域名=身份，不追问碳基还是硅基 |
+| 密码登录 | 数据库拖库即灾难 | 无私钥存储，DNS 即信任锚 |
 
-```bash
-pip install kirin-dns dnspython
+---
+
+## DNS 记录定义
+
+所有记录使用 `did:dns:` 前缀，放在域名根节点。**单条 ≤ 200 字节，避免 UDP 分片。**
+
+```
+; 身份声明（必选）
+mydomain.example. 300 IN TXT "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
+
+; 公钥（必选）
+mydomain.example. 300 IN TXT "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
+
+; 黑名单（可选，已撤销的旧公钥指纹）
+mydomain.example. 300 IN TXT "did:dns:black;fp=OldKeyFp1,OldKeyFp2"
+
+; 服务发现
+_kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 ```
 
+- **指纹验证链**：fp = SHA-256(公钥)[0:12] → 防公钥替换攻击
+- **DNSSEC 强制**：域名必须有 DNSSEC 签名，或客户端通过可信 DoH 获取
+- **Ed25519 唯一密钥类型**：全系统统一，加密场景 Ed25519→X25519 转换 + HPKE
+
+详见 [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)（9 节，387 行）。
+
+---
+
+## AI 智能体原生支持
+
+智能体无需任何特殊适配即可使用全部 KirinNet 功能：
+
+```
+智能体 A (agent.example)              智能体 B (bot.example)
+     |                                       |
+     |  1. DNS 查询 bot.example TXT          |
+     |     → pk_B, fp_B                      |
+     |  2. 验证 fp_B = SHA-256(pk_B)[0:12]  |
+     |  3. 生成临时 X25519 密钥对            |
+     |  4. HPKE 加密挑战码至 pk_B            |
+     |  5. POST /.well-known/did-dns/decrypt |
+     |-------------------------------------->|
+     |                                       |  6. HPKE 解密挑战码
+     |                                       |  7. 签名响应
+     |  8. 验证签名 → 双向信任建立          |
+     |<--------------------------------------|
+     |  9. AES-256-GCM 安全通道              |
+```
+
+- **智能体市场**：SRV 记录自动发现，签名合约自动执行
+- **个人 AI 代理**：子域名委托（`agent.alice.example`）
+- **链上智能体**：`did:dns:dao.example` 可被链上合约直接引用
+- **IoT 设备群**：每设备一个子域名自证身份
+
+---
+
+## 开发库 (SDK)
+
+优先三语言（Python / JavaScript / Rust），计划扩展至 15 种主流语言。
+
+| 库 | 用途 | Python | JavaScript | Rust |
+|---|---|---|---|---|
+| **kirin-dns** | DoH 解析 TXT/SRV/A，指纹验证 | `pip install kirin-dns` | `npm i kirin-dns` | `cargo add kirin-dns` |
+| **kirin-auth** | HPKE 挑战-响应，自动认证 | `pip install kirin-auth` | `npm i kirin-auth` | `cargo add kirin-auth` |
+
+### 快速示例
+
+**Python:**
 ```python
-from kirin_dns import resolve_kirin_dns
-
-ports = resolve_kirin_dns("example.com")
-# Returns: {"http": 8080, "https": 8443}
-# Falls back to: {"http": 80, "https": 443} if no ADRP record
+from kirin_dns import resolve
+identity = resolve("alice.example")
+print(identity.identity.nickname)   # "Alice"
+print(identity.pubkey_verified)      # True
+print(identity.service.ws_port)      # 8082
 ```
 
-### JavaScript / Node.js
-
-```bash
-npm install kirin-dns
-```
-
+**JavaScript:**
 ```javascript
-const { resolve_kirin_dns } = require('kirin-dns');
-
-const ports = await resolve_kirin_dns('example.com');
-// Returns: { http: 8080, https: 8443 }
-// Falls back to: { http: 80, https: 443 } if no ADRP record
+import { resolve } from 'kirin-dns';
+const identity = await resolve('alice.example');
+console.log(identity.identity.nickname);
+console.log(identity.service.wsPort);
 ```
 
-### Go
-
-```bash
-go get github.com/kirin-yucall/kirin-dns-go
-```
-
-```go
-import "github.com/kirin-yucall/kirin-dns-go"
-
-ports, err := kirindns.Resolve("example.com")
-// Returns: ResolvedPorts{HTTP: 8080, HTTPS: 8443, WS: 80, WSS: 443}
-```
-
-### Rust
-
-```bash
-cargo add kirin-dns
-```
-
+**Rust:**
 ```rust
-use kirin_dns::KirinDns;
-
-let ports = KirinDns::resolve("example.com").await?;
-// ports.http() == 8080, ports.https() == 8443
+use kirin_dns::resolve;
+let identity = resolve("alice.example")?;
+println!("{}", identity.nickname());
+println!("ws_port: {:?}", identity.ws_port());
 ```
-
-### Browser Extension
-
-The KirinDNS Chrome Extension automatically redirects HTTP/HTTPS requests to
-ADRP-discovered ports. Install from the [Chrome Web Store](#) or load the
-unpacked extension from `03_Browser_Extension/`.
 
 ---
 
-## Project Structure
+## 安全架构
 
-```
-KirinDNS_Project/
-├── 01_Standard/           # Protocol specification
-│   ├── spec_v1.md         # ADRP specification (RFC-style)
-│   └── compatibility.md   # Compatibility notes
-├── 02_Libraries/          # 15 语言客户端库（ADRP 协议实现）
-│   ├── python/            # Python (dnspython) ✅ 已测试
-│   ├── javascript/        # Node.js ✅ 已测试
-│   ├── go/                # Go 1.21+ ✅ 语法通过
-│   ├── rust/              # Rust (trust-dns) ✅ 语法通过
-│   ├── c/                 # C99 (libresolv) ✅ 已测试
-│   ├── cpp/               # C++17 header-only ✅ 已测试
-│   ├── csharp/            # C# (.NET 6+)
-│   ├── java/              # Java (JDK 11+)
-│   ├── kotlin/            # Kotlin/JVM
-│   ├── dart/              # Dart 3.0+
-│   ├── ruby/              # Ruby (stdlib)
-│   ├── swift/             # Swift (Foundation)
-│   ├── php/               # PHP 8.0+
-│   ├── lua/               # Lua 5.1+ (luasocket)
-│   └── typescript/        # TypeScript 类型定义
-├── 03_Browser_Extension/  # Chrome Extension (Manifest V3)
-├── 04_Chromium_Browser/   # Custom Chromium build instructions
-├── 05_Adoption/           # IETF roadmap, GTM strategy, demo sites
-├── 07_User_Node/          # KirinNet Node — universal Docker image
-│   ├── spec.md            # Node specification v2.7.0
-│   ├── api.md             # Complete API reference (50+ endpoints)
-│   ├── Dockerfile         # Single Docker image
-│   ├── package.json       # Node.js dependencies (DuckDB + Express)
-│   ├── public/            # Web UI
-│   │   ├── init.html      # First-run initialization wizard
-│   │   ├── login.html     # Login gate (required every session)
-│   │   ├── index.html     # Main SPA (content/showcase/content/trade/center)
-│   │   └── settings.html  # Settings panel (legacy, SPA supersedes)
-│   ├── models/
-│   │   └── database.js    # DuckDB schema (all tables)
-│   └── routes/            # 22 个 API 路由模块
-│       ├── kirin.js       # Init, profile, restart, CA cert
-│       ├── content.js     # 内容 CRUD + tags + 分段去重哈希
-│       ├── im.js          # IM 分组 + 成员管理
-│       ├── im_messages.js # 群聊 + 私聊消息
-│       ├── explore.js     # 探索系统（方向/爬取/黑名单）
-│       ├── drafts.js      # 草稿箱
-│       ├── cart.js        # 购物车
-│       ├── favorites.js   # 收藏
-│       ├── history.js     # 足迹
-│       ├── orders.js      # 订单
-│       ├── coupons.js     # 优惠券
-│       ├── payment_methods.js  # 支付方式
-│       ├── contacts.js    # 联系人
-│       ├── notifications.js    # 通知
-│       ├── addresses.js   # 收货地址
-│       ├── followers.js   # 粉丝系统 + 加密推送
-│       ├── monetize.js    # 积分 + VIP
-│       ├── push.js        # DOH 验证推送
-│       ├── ad-auction.js  # 广告位竞价
-│       ├── indexer.js     # 公共索引
-│       ├── settings.js    # 运行时设置
-│       └── dns.js         # DNS 管理 (12 providers)
-├── 08_KirinNet/           # 公共索引器源码（已整合进 07_User_Node）
-├── 09_Pub_Aggregator/     # 聚合爬虫源码（已整合进 07_User_Node）
-```
+- **零 CA 信任链**：DNSSEC/DoH → DNS 公钥 → 指纹验证 → HPKE 加密
+- **Ed25519 统一密钥**：身份签名、好友加密、Follower 内容加密全部 Ed25519
+- **HPKE 传输加密**：Ed25519→X25519 转换 + ECDH + HKDF-SHA-256 → AES-256-GCM
+- **设备授权模式**：挑战-响应自动认证，用户无需手动输入验证码，授权码 60 秒一次性有效
+- **密钥撤销**：黑名单 `did:dns:black` 记录发布已撤销指纹
+- **去中心化**：每个用户自跑节点，无中心服务器，不需要限流
+
+详见 [`01_Standard/security_model_v1.md`](01_Standard/security_model_v1.md)。
 
 ---
 
 ## KirinNet 用户节点
 
-**一个镜像，全部能力。** 07_User_Node/ 是唯一的用户节点源码，
-整合了索引器（08_KirinNet）和聚合爬虫（09_Pub_Aggregator）的全部功能。
+**一个镜像，全部能力。** `07_User_Node/` 是唯一的用户节点源码，整合了索引器（08_KirinNet）和聚合爬虫（09_Pub_Aggregator）的全部功能。
 
-**流程:** 首次访问 → 设置密码 → 登录 → SPA 主界面。
-登录态 localStorage 持久化 72 小时。
-
-Quick start:
+**流程:** 首次访问 → 初始化向导 → 登录 → SPA 主界面。
 
 ```bash
 docker run -d --name my-node --restart unless-stopped \
-  -p 8080:8080 -v ./data:/app/data \
+  -p 8080:8080 -p 8082:8082 \
+  -v ./data:/app/data \
   kirinnet-node:latest
 ```
 
-然后打开 `http://localhost:8080/`，完成初始化向导。
+然后打开 `http://localhost:8080/`。
 
 **核心功能:**
 - 🏠 内容发布 + 标签 + 弹性分段 SHA-256 去重
 - 🔍 探索系统（方向驱动主动探知，替代搜索）
-- 💬 IM 群聊 + 私聊 + 交易密钥
+- 💬 IM 群聊 + 私聊（WebSocket，好友 Ed25519 密钥锁定）
 - 📢 广告位竞拍（收入归节点主人）
-- 👥 粉丝订阅 + 自动加密推送
+- 👥 粉丝订阅 + HPKE 自动加密推送
 - 💰 积分 + VIP 变现
 - 🛒 购物车/订单/优惠券/支付方式
 - 🔗 公共索引 + 域名黑名单
 - 🌐 DNS 管理（12 家服务商）
 - ⚙️ 所有设置 Web UI 实时切换，重启持久化
+- 🔐 DID-DNS 解密端点 `/.well-known/did-dns/decrypt`
 
 详见 [`07_User_Node/README.md`](07_User_Node/README.md) 和 [`07_User_Node/api.md`](07_User_Node/api.md)。
 
 ---
 
-## Protocol Specification
+## 项目结构
 
-The full ADRP specification is available at [`01_Standard/spec_v1.md`](01_Standard/spec_v1.md).
-
-Key points:
-- SRV record format: `_kirinnet-{http|https|ws}._tcp.<domain> IN SRV 0 0 <port> <target>.`
-- TXT record format: `id=<uuid>;key=<hex>;nick=<name>;ipfs=<bool>`
-- Fallback to standard ports (80/443) if SRV is missing or invalid
-- Identity is optional — domains without identity TXT work as anonymous services
-- All queries MUST use DNS-over-TLS (DoT) or DNS-over-HTTPS (DoH)
+```
+KirinNet_Project/
+├── README.md
+├── 01_Standard/
+│   ├── did-dns-protocol.md      # DID-DNS 身份协议 (9 节, 387 行)
+│   ├── dns_automation.md        # DNS 自动化标准
+│   ├── security_model_v1.md     # 安全威胁模型
+│   └── im_protocol.md           # IM 通信协议
+├── 02_Libraries/                # 开发库（计划 15 语言）
+│   ├── kirin-dns/               # DNS 解析 → python/js/rust
+│   ├── kirin-auth/              # 自动认证 → python/js/rust
+│   ├── python/ javascript/ go/ rust/  # 旧版 ADRP 实现
+│   ├── c/ cpp/ csharp/ java/ kotlin/
+│   ├── dart/ ruby/ swift/ php/ lua/
+│   └── typescript/
+├── 03_Browser_Extension/        # Chrome Extension (Manifest V3)
+├── 04_Chromium_Browser/         # Custom Chromium build instructions
+├── 05_Adoption/                 # IETF roadmap, GTM strategy, demo sites
+├── 07_User_Node/                # KirinNet Node — 单一 Docker 镜像
+│   ├── storage_architecture.md  # 存储架构 (DuckDB + RocksDB + FS)
+│   ├── server.js                # 单入口，22 个模块
+│   ├── models/                  # DuckDB schema
+│   ├── routes/                  # 22 个 API 路由模块
+│   └── public/                  # Web UI (SPA)
+├── 08_KirinNet/                 # 公共索引器（已整合进 07）
+├── 09_Pub_Aggregator/           # 聚合爬虫（已整合进 07）
+├── TASKPLAN.md
+├── DECISIONS.md
+└── LICENSE
+```
 
 ---
 
-## IETF Standardization Status
+## 设计原则
 
-ADRP is being advanced through the IETF process:
-
-1. **Internet-Draft** — submitted to the IETF datatracker
-2. **Working Group** — targeting DNSOP (DNS Operations)
-3. **WG Last Call** — pending WG adoption
-4. **RFC Publication** — target: within 12 months
-
-See the [IETF Standardization Roadmap](05_Adoption/rfc_draft.md) for details.
-
----
-
-## Contributing
-
-We welcome contributions! Here's how to get started:
-
-### Reporting Issues
-
-Found a bug? Open an issue on GitHub with:
-- A clear description of the problem
-- Steps to reproduce
-- Expected vs. actual behavior
-
-### Pull Requests
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Write tests for your changes
-4. Ensure all tests pass (`pytest` for Python, `jest` for JavaScript)
-5. Submit a pull request
-
-### Code Style
-
-- **Python**: Follow PEP 8, max line length 120
-- **JavaScript**: ES2022+, no semicolons (optional), 2-space indent
-- **Go**: Standard `gofmt` formatting
-- **Rust**: `rustfmt` formatting
-
-### Adding a New Library Implementation
-
-If you want to add ADRP support for a new language:
-
-1. Create a new directory under `02_Libraries/<language>/`
-2. Implement the core function: `resolve_kirin_dns(domain) -> {ports}`
-3. Add tests that match the cross-language test matrix in
-   `02_Libraries/python/tests/test_kirin_dns.py` (the `TestCrossLanguageConsistency` class)
-4. Add the language to the CI workflow in `.github/workflows/ci.yml`
-5. Submit a PR
+- **域名 = 身份容器**：域名 + Ed25519 = 自证身份，无需任何人担保
+- **人与智能体零区分**：协议层不区分——只问"你有私钥吗？"
+- **零 CA 信任链**：DNSSEC/DoH → DNS 公钥 → 密码学验证 → 闭环
+- **去中心化思维**：不用限流、不用中心化注册、不用 CA 证书
+- **Ed25519 唯一密钥类型**：全系统统一，加密场景 Ed25519→X25519 转换
 
 ---
 
@@ -297,25 +222,11 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- **Protocol Spec**: [`01_Standard/spec_v1.md`](01_Standard/spec_v1.md)
-- **IETF Roadmap**: [`05_Adoption/rfc_draft.md`](05_Adoption/rfc_draft.md)
-- **GTM Strategy**: [`05_Adoption/go_to_market.md`](05_Adoption/go_to_market.md)
-- **Demo Sites**: [`05_Adoption/demo_sites.md`](05_Adoption/demo_sites.md)
-- **Chrome Extension**: [`03_Browser_Extension/`](03_Browser_Extension/)
-- **User Node**: [`07_User_Node/spec.md`](07_User_Node/spec.md)
-- **Chromium Build**: [`04_Chromium_Browser/build_instructions.md`](04_Chromium_Browser/build_instructions.md)
-- **IETF Datatracker**: [draft-kirindns-adrp](https://datatracker.ietf.org/doc/draft-kirindns-adrp/) (coming soon)
-
----
-
-**The Internet is more than just port 80 and 443.**
-
----
-
-> **KirinDNS** — Port-Aware DNS Resolution for the Modern Web
-> [![CI](https://github.com/kirin-yucall/KirinNet/actions/workflows/ci.yml/badge.svg)](https://github.com/kirin-yucall/KirinNet/actions/workflows/ci.yml)
-> [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-> [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](02_Libraries/python/)
-> [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](02_Libraries/javascript/)
-> [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](02_Libraries/go/)
-> [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](02_Libraries/rust/)
+- **DID-DNS 协议**: [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)
+- **用户节点文档**: [`07_User_Node/README.md`](07_User_Node/README.md)
+- **API 参考**: [`07_User_Node/api.md`](07_User_Node/api.md)
+- **存储架构**: [`07_User_Node/storage_architecture.md`](07_User_Node/storage_architecture.md)
+- **安全模型**: [`01_Standard/security_model_v1.md`](01_Standard/security_model_v1.md)
+- **IETF 路线图**: [`05_Adoption/rfc_draft.md`](05_Adoption/rfc_draft.md)
+- **Chrome 扩展**: [`03_Browser_Extension/`](03_Browser_Extension/)
+- **GitHub**: [kirin-yucall/KirinNet](https://github.com/kirin-yucall/KirinNet)
