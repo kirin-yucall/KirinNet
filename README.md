@@ -1,10 +1,13 @@
-# KirinNet 麒麟网
+# KirinNet 麒麟网 — 去中心化身份与节点网络协议
 
-> 去中心化身份与节点网络 — 域名即身份，为人和 AI 智能体共享。
+> 域名即身份，为人和 AI 智能体共享。
 
-KirinNet 是一个完全去中心化的网络协议和节点实现。每个域名就是一个通用、自证的身份容器——无论持有私钥的是人还是 AI 智能体，协议层不做任何区分。
+KirinNet 是一个完全去中心化的网络协议。每个域名就是一个通用、自证的身份容器——无论持有私钥的是人还是 AI 智能体，协议层不做任何区分。
 
 **不需要中心化 CA。不需要用户注册。不需要密码。** DNS 就是你的身份层，Ed25519 私钥就是你的证明。
+
+> **本仓库仅开源 KirinNet 协议**（身份协议 / 服务发现 / IM / 安全模型 / SDK / 浏览器生态）。
+> 用户节点（Node）实现已拆分为独立仓库：**[kirin-yucall/KirinNet-Node](https://github.com/kirin-yucall/KirinNet-Node)**。
 
 ---
 
@@ -54,7 +57,21 @@ _kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 - **DNSSEC 强制**：域名必须有 DNSSEC 签名，或客户端通过可信 DoH 获取
 - **Ed25519 唯一密钥类型**：全系统统一，加密场景 Ed25519→X25519 转换 + HPKE
 
-详见 [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)（9 节，387 行）。
+详见 [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)。
+
+---
+
+## 协议组成
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [`did-dns-protocol.md`](01_Standard/did-dns-protocol.md) | DID-DNS 身份协议（记录格式/自动认证/解密端点/HPKE/AI 智能体身份模型） | ✅ 基线 |
+| [`spec_v1.md`](01_Standard/spec_v1.md) | ADRP 解析协议（SRV 服务发现 + TXT 身份元数据） | ⚠️ 旧格式待对齐 |
+| [`dns_automation.md`](01_Standard/dns_automation.md) | DNS 自动化标准（更新 API 契约、节点更新循环） | ✅ |
+| [`im_protocol.md`](01_Standard/im_protocol.md) | P2P IM 协议（两阶段好友、会话密钥） | ⚠️ 旧品牌/旧密钥 |
+| [`security_model_v1.md`](01_Standard/security_model_v1.md) | 安全威胁模型（三层信任/心跳/分布式入侵检测） | ⚠️ RSA 体系待对齐 |
+
+> 已知协议不一致问题（密钥体系三套并存、TXT 格式两代等）见 [`需求设计文档.md`](需求设计文档.md) 第 9 章。
 
 ---
 
@@ -95,32 +112,7 @@ _kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 | **kirin-dns** | DoH 解析 TXT/SRV/A，指纹验证 | `pip install kirin-dns` | `npm i kirin-dns` | `cargo add kirin-dns` |
 | **kirin-auth** | HPKE 挑战-响应，自动认证 | `pip install kirin-auth` | `npm i kirin-auth` | `cargo add kirin-auth` |
 
-### 快速示例
-
-**Python:**
-```python
-from kirin_dns import resolve
-identity = resolve("alice.example")
-print(identity.identity.nickname)   # "Alice"
-print(identity.pubkey_verified)      # True
-print(identity.service.ws_port)      # 8082
-```
-
-**JavaScript:**
-```javascript
-import { resolve } from 'kirin-dns';
-const identity = await resolve('alice.example');
-console.log(identity.identity.nickname);
-console.log(identity.service.wsPort);
-```
-
-**Rust:**
-```rust
-use kirin_dns::resolve;
-let identity = resolve("alice.example")?;
-println!("{}", identity.nickname());
-println!("ws_port: {:?}", identity.ws_port());
-```
+详见 [`02_Libraries/README.md`](02_Libraries/README.md)（15 语言实现状态）。
 
 ---
 
@@ -132,73 +124,38 @@ println!("ws_port: {:?}", identity.ws_port());
 - **设备授权模式**：挑战-响应自动认证，用户无需手动输入验证码，授权码 60 秒一次性有效
 - **密钥撤销**：黑名单 `did:dns:black` 记录发布已撤销指纹
 - **去中心化**：每个用户自跑节点，无中心服务器，不需要限流
+- **三层信任模型**：好友密钥锁定 → 政府 CA（可选实名映射）→ 物理追责
 
 详见 [`01_Standard/security_model_v1.md`](01_Standard/security_model_v1.md)。
 
 ---
 
-## KirinNet 用户节点
+## 客户端生态
 
-**一个镜像，全部能力。** `07_User_Node/` 是唯一的用户节点源码，整合了索引器（08_KirinNet）和聚合爬虫（09_Pub_Aggregator）的全部功能。
-
-**流程:** 首次访问 → 初始化向导 → 登录 → SPA 主界面。
-
-```bash
-docker run -d --name my-node --restart unless-stopped \
-  -p 8080:8080 -p 8082:8082 \
-  -v ./data:/app/data \
-  kirinnet-node:latest
-```
-
-然后打开 `http://localhost:8080/`。
-
-**核心功能:**
-- 🏠 内容发布 + 标签 + 弹性分段 SHA-256 去重
-- 🔍 探索系统（方向驱动主动探知，替代搜索）
-- 💬 IM 群聊 + 私聊（WebSocket，好友 Ed25519 密钥锁定）
-- 📢 广告位竞拍（收入归节点主人）
-- 👥 粉丝订阅 + HPKE 自动加密推送
-- 💰 积分 + VIP 变现
-- 🛒 购物车/订单/优惠券/支付方式
-- 🔗 公共索引 + 域名黑名单
-- 🌐 DNS 管理（12 家服务商）
-- ⚙️ 所有设置 Web UI 实时切换，重启持久化
-- 🔐 DID-DNS 解密端点 `/.well-known/did-dns/decrypt`
-
-详见 [`07_User_Node/README.md`](07_User_Node/README.md) 和 [`07_User_Node/api.md`](07_User_Node/api.md)。
+- **Chrome 扩展**（Manifest V3）：DNS TXT 查询 → 端口发现 → 重定向非标准端口服务 → [`03_Browser_Extension/`](03_Browser_Extension/)
+- **定制 Chromium**：内置扩展打包，核心 DNS 栈零改动 → [`04_Chromium_Browser/`](04_Chromium_Browser/)
+- **IETF 标准化**：ADRP 草案 + DNSOP 工作组路线图 → [`05_Adoption/rfc_draft.md`](05_Adoption/rfc_draft.md)
 
 ---
 
 ## 项目结构
 
 ```
-KirinNet_Project/
+KirinNet/
 ├── README.md
-├── 01_Standard/
-│   ├── did-dns-protocol.md      # DID-DNS 身份协议 (9 节, 387 行)
-│   ├── dns_automation.md        # DNS 自动化标准
-│   ├── security_model_v1.md     # 安全威胁模型
-│   └── im_protocol.md           # IM 通信协议
-├── 02_Libraries/                # 开发库（计划 15 语言）
-│   ├── kirin-dns/               # DNS 解析 → python/js/rust
-│   ├── kirin-auth/              # 自动认证 → python/js/rust
-│   ├── python/ javascript/ go/ rust/  # 旧版 ADRP 实现
-│   ├── c/ cpp/ csharp/ java/ kotlin/
-│   ├── dart/ ruby/ swift/ php/ lua/
-│   └── typescript/
-├── 03_Browser_Extension/        # Chrome Extension (Manifest V3)
-├── 04_Chromium_Browser/         # Custom Chromium build instructions
-├── 05_Adoption/                 # IETF roadmap, GTM strategy, demo sites
-├── 07_User_Node/                # KirinNet Node — 单一 Docker 镜像
-│   ├── storage_architecture.md  # 存储架构 (DuckDB + RocksDB + FS)
-│   ├── server.js                # 单入口，22 个模块
-│   ├── models/                  # DuckDB schema
-│   ├── routes/                  # 22 个 API 路由模块
-│   └── public/                  # Web UI (SPA)
-├── 08_KirinNet/                 # 公共索引器（已整合进 07）
-├── 09_Pub_Aggregator/           # 聚合爬虫（已整合进 07）
-├── TASKPLAN.md
-├── DECISIONS.md
+├── 需求设计文档.md              # 协议需求与设计总览
+├── DECISIONS.md                # 架构决策记录
+├── 01_Standard/                # 协议规范
+│   ├── did-dns-protocol.md     # DID-DNS 身份协议
+│   ├── spec_v1.md              # ADRP 解析协议
+│   ├── dns_automation.md       # DNS 自动化标准
+│   ├── im_protocol.md          # IM 通信协议
+│   ├── security_model_v1.md    # 安全威胁模型
+│   └── draft-*-adrp-*.txt      # IETF 草案
+├── 02_Libraries/               # 15 语言 SDK（kirin-dns / kirin-auth）
+├── 03_Browser_Extension/       # Chrome Extension (Manifest V3)
+├── 04_Chromium_Browser/        # 定制 Chromium 构建说明
+├── 05_Adoption/                # IETF 路线图 / GTM / 演示站点
 └── LICENSE
 ```
 
@@ -222,11 +179,9 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Links
 
+- **需求与设计总览**: [`需求设计文档.md`](需求设计文档.md)
 - **DID-DNS 协议**: [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)
-- **用户节点文档**: [`07_User_Node/README.md`](07_User_Node/README.md)
-- **API 参考**: [`07_User_Node/api.md`](07_User_Node/api.md)
-- **存储架构**: [`07_User_Node/storage_architecture.md`](07_User_Node/storage_architecture.md)
-- **安全模型**: [`01_Standard/security_model_v1.md`](01_Standard/security_model_v1.md)
 - **IETF 路线图**: [`05_Adoption/rfc_draft.md`](05_Adoption/rfc_draft.md)
 - **Chrome 扩展**: [`03_Browser_Extension/`](03_Browser_Extension/)
+- **用户节点（独立仓库）**: [kirin-yucall/KirinNet-Node](https://github.com/kirin-yucall/KirinNet-Node)
 - **GitHub**: [kirin-yucall/KirinNet](https://github.com/kirin-yucall/KirinNet)
