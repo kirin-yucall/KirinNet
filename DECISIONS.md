@@ -105,4 +105,4 @@
 - `01_Standard/spec_v1.md` 与 `did-dns-protocol.md` 的密钥体系/TXT 格式冲突（已决策统一，待修订文档）
 - `01_Standard/dns_automation.md` 服务商数待更新（12 → 15 家）
 - `01_Standard/compatibility.md` 为空文件（填充或删除）
-- 泛洪消息格式、VDF 算法、多点协商、信任权重体系等细节待协议设计阶段细化（见《需求设计文档》6.9）
+- 泛洪消息格式、VDF 算法、多点协商、信任权重体系等细节待协议设计阶段细化

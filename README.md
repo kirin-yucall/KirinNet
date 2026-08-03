@@ -72,7 +72,7 @@ _kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 | [`im_protocol.md`](01_Standard/im_protocol.md) | P2P IM 协议（两阶段好友、会话密钥） | ⚠️ 旧品牌/旧密钥 |
 | [`security_model_v1.md`](01_Standard/security_model_v1.md) | 安全威胁模型（三层信任/心跳/分布式入侵检测） | ⚠️ RSA 体系待对齐 |
 
-> 已知协议不一致问题（密钥体系三套并存、TXT 格式两代等）见 [`需求设计文档.md`](需求设计文档.md) 第 9 章。
+> 已知协议不一致问题（密钥体系三套并存、TXT 格式两代等）见 [`DECISIONS.md`](DECISIONS.md) 第 8 节。
 
 ---
 
@@ -147,7 +147,6 @@ _kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 ```
 KirinNet/
 ├── README.md
-├── 需求设计文档.md              # 协议需求与设计总览
 ├── DECISIONS.md                # 架构决策记录
 ├── 01_Standard/                # 协议规范
 │   ├── did-dns-protocol.md     # DID-DNS 身份协议
@@ -183,7 +182,6 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- **需求与设计总览**: [`需求设计文档.md`](需求设计文档.md)
 - **DID-DNS 协议**: [`01_Standard/did-dns-protocol.md`](01_Standard/did-dns-protocol.md)
 - **IETF 路线图**: [`05_Adoption/rfc_draft.md`](05_Adoption/rfc_draft.md)
 - **Chrome 扩展**: [`03_Browser_Extension/`](03_Browser_Extension/)

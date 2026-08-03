@@ -219,3 +219,6 @@ __marimo__/
 
 # ZCode workspace files
 .zcode/
+
+# 需求设计文档（需求与设计已剥离，不在代码库跟踪）
+需求设计文档.md
