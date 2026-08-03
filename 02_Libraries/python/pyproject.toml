@@ -7,7 +7,7 @@ name = "kirin-dns"
 version = "0.1.0"
 description = "KirinDNS (ADRP) — Port-aware DNS resolution client library"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 requires-python = ">=3.9"
 authors = [
     {name = "kirin-yucall", email = "kirin.yucall@gmail.com"},
@@ -16,7 +16,7 @@ keywords = ["dns", "adrp", "kirindns", "port-discovery", "web3"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",

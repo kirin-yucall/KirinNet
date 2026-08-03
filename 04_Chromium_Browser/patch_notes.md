@@ -89,6 +89,6 @@ When upgrading to a newer Chromium version:
 
 ## License
 
-The KirinDNS extension code is licensed under the MIT License.
+The KirinDNS extension code is licensed under the Apache License 2.0.
 All Chromium source code remains under the Chromium license (BSD-style).
 No Chromium source code has been modified.
