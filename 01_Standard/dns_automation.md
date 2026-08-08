@@ -1,6 +1,6 @@
 # KirinDNS Automation Standard
 
-> **Version:** 2.1
+> **Version:** 2.2
 > **Status:** Draft
 > **Scope:** How KirinNet nodes programmatically manage DNS records for service discovery (SRV) and identity/authentication (DID-DNS TXT).
 
@@ -397,9 +397,64 @@ Same API contract. Authentication via mTLS or localhost-only access.
 
 ---
 
-## 9. Open Questions
+## 9. Supported DNS Providers (15)
+
+> **Decision (§0, 2026-08-01):** DNS service providers expanded from 12 to **15**. The provider list serves as the protocol-side target registry; node-side implementation (provider dispatch / API integration) tracks this list via KNET-CC-003 (C-4). Bootstrapping depends on providers; long-term they run in parallel as fallback alongside traditional DNS (pragmatic interop, not elimination).
+>
+> **Implementation status:** Cloudflare is the reference implementation (`dns.js` `callProviderAPI`); the remaining 14 are protocol targets pending node-side integration (KNET-CC-003).
+
+KirinNet targets 15 DNS providers with APIs that support automated A/SRV/TXT record updates. The list balances global reach, China availability, free/paid mix, and DNSSEC capability:
+
+| # | Provider | API Base | Region | Free Tier | DNSSEC | Status |
+|---|----------|----------|--------|-----------|--------|--------|
+| 1 | Cloudflare | `api.cloudflare.com/client/v4` | Global | Yes | Yes | ✅ Reference (implemented) |
+| 2 | Alibaba Cloud DNS | `alidns.aliyuncs.com` | China/Global | Yes | Yes | 🟡 Target |
+| 3 | Tencent Cloud DNSPod | `cloud.tencent.com` / `dnsapi.cn` | China/Global | Yes | Yes | 🟡 Target |
+| 4 | Huawei Cloud DNS | `dns.myhuaweicloud.com` | China/Global | Yes | Yes | 🟡 Target |
+| 5 | AWS Route 53 | `route53.amazonaws.com` | Global | No | Yes | 🟡 Target |
+| 6 | Google Cloud DNS | `dns.googleapis.com` | Global | No | Yes | 🟡 Target |
+| 7 | GoDaddy | `api.godaddy.com` | Global | No | Partial | 🟡 Target |
+| 8 | Namecheap | `api.namecheap.com` | Global | No | Partial | 🟡 Target |
+| 9 | Gandi | `api.gandi.net` (LiveDNS) | Global | No | Yes | 🟡 Target |
+| 10 | DNSMadeEasy | `api.dnsmadeeasy.com` | Global | No | Yes | 🟡 Target |
+| 11 | NS1 (IBM) | `api.nsone.net` | Global | No | Yes | 🟡 Target |
+| 12 | Hurricane Electric | `dns.he.net` (screen-scrape/API-limited) | Global | Yes | Yes | 🟡 Target |
+| 13 | deSEC | `desec.io/api/v1` | Global (EU) | Yes | Yes (default) | 🟡 Target |
+| 14 | Porkbun | `porkbun.com/api/json/v3` | Global | Yes | Yes | 🟡 Target |
+| 15 | DigitalOcean DNS | `api.digitalocean.com/v2/domains` | Global | Yes | Yes | 🟡 Target |
+
+**Selection criteria:**
+
+1. **API support** for automated A/SRV/TXT updates (programmatic, not manual UI only).
+2. **Coverage** — global reach plus China-mainland availability (providers 2-4) for cross-region interop.
+3. **Free/paid mix** — free tiers (Cloudflare/HE/deSEC/Porkbun/DigitalOcean/Alibaba/DNSPod/Huawei) lower the bootstrap barrier; paid providers (Route 53/Gandi/NS1/etc.) serve production deployments.
+4. **DNSSEC** — preferred (most listed support it), strengthening the `did:dns:` fingerprint chain against DNS spoofing (see `security_model_v1.md` §7.1).
+5. **Pragmatic interop** — providers run in parallel with self-hosted DNS (§8) and traditional DNS; bootstrapping depends on them, long-term they are fallback.
+
+**Provider dispatch contract (node-side, via KNET-CC-003):**
+
+- Node reads `dns_provider` setting and dispatches to the matching provider API (`callProviderAPI` in `dns.js`).
+- Each provider integration implements: `list_zones` (connectivity test), `update_dns` (A/SRV/TXT upsert).
+- The `X-DNS-Token` / `dns_api_key` authenticates to the provider API.
+- Unimplemented providers return `not yet implemented` (fail-closed) until integrated — see `需求文档\02_DNS动态解析.md` FR1 / 7.1.
+
+> **C-4 cross-repo alignment:** Node-side `api.md` §13 / `spec.md` §5/§6.9 currently state "12 providers". After this protocol-side 15-provider list is finalized and signed off via KNET-CC-003, node-side docs update 12 → 15 to match. Protocol-side leads, node-side follows (KNET-COM-03).
+
+---
+
+## 10. Open Questions
 
 1. **Multi-node SRV?** A single domain may have multiple nodes behind it (load-balanced). SRV natively supports this via multiple records with different priorities/weights. Implementation TBD.
 2. **IPv6-only nodes?** AAAA record handles this. SRV format is IP-agnostic.
 3. **Mobile node TTL?** Nodes on cellular may need TTL as low as 60s. The minimum TTL of 60s balances freshness against DNS query load.
 4. **Service discovery beyond KirinNet?** The `_kirinnet-*` namespace is reserved. Extensions (IPFS gateway, STUN, TURN) use `_kirinnet-ipfs._tcp`, `_kirinnet-stun._udp`, etc.
+
+---
+
+## 11. Revision History
+
+| Version | Date | Change | Reference |
+|---|---|---|---|
+| 2.0 | 2026-07-09 | Initial ADRP v2.0: SRV (RFC 2782) + DID-DNS TXT automation | — |
+| 2.1 | 2026-08-01 | DID-DNS three-record model (identity/public-key/blacklist), Ed25519 keys, fingerprint chain | §0 |
+| 2.2 | 2026-08-08 | **C-4 (protocol-side):** Added §9 "Supported DNS Providers (15)" — target registry of 15 providers (Cloudflare reference + 14 targets), filling the X-QA-flagged protocol-side gap. Node-side 12→15 alignment tracks via KNET-CC-003. | C-4 · KNET-CC-003 · 波0 |
