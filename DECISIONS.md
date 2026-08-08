@@ -209,7 +209,7 @@
   2. **校验方域名**（请求来源）—— 防跨域重放。
   3. **受验方域名**（身份声明主体）—— 绑定 `did:dns:v=1` 身份声明。
   4. **泛洪 `forward_chain`（转发链）**—— P-FLOOD T1 草案的转发链字段 MUST 纳入签名覆盖范围（防转发链篡改/注入，P-FLOOD 引用本口径，不重定义）。
-  5. **T3 权重字段**（`weight` / `trust_score`）—— P-FLOOD T3 草案的信任权重字段 MUST 纳入签名覆盖范围（防权重篡改，P-FLOOD 引用本口径）。
+  5. **T3 权重字段**（`trust_weight`, int8 -127~100）—— P-FLOOD T3 草案的信任权重字段 MUST 纳入签名覆盖范围（防权重篡改，P-FLOOD 引用本口径）。
 - **MUST NOT 覆盖**：传输层元数据（HTTP 头、TLS 证书、IP 地址）—— 这些由传输层（HTTPS/TLS）保证，不重复签名。
 - **签名算法**：Ed25519（64 字节签名），输出 Base64URL（约 86 字符）。
 - **规范化规则（防编码歧义）**：覆盖字段按固定顺序拼接，字段间用 `\n` 分隔；JSON 场景按 JCS（RFC 8785）规范化后再签名。
@@ -230,8 +230,15 @@
 #### 9.3.4 P-DOC / P-FLOOD 落点
 
 - **P-DOC 落章节**：T9 技术口径由 P-DOC 落到 `did-dns-protocol.md`（§3 自动验证流程补签名质询子节）+ `im_protocol.md`（§7 安全模型补签名覆盖范围）+ `security_model_v1.md`（§7.2 分工表补 T9 引用）。
-- **P-FLOOD 落点**：T1（泛洪消息格式）的 `forward_chain` 字段 + T3（信任权重体系）的 `weight` 字段，**引用 §9.3.2 签名覆盖范围**，不重定义；P-FLOOD 草案标注「引用 T9 草案·未会签·单边定稿无效」。
+- **P-FLOOD 落点**：T1（泛洪消息格式）的 `forward_chain` 字段 + T3（信任权重体系）的 `trust_weight` 字段，**引用 §9.3.2 签名覆盖范围**，不重定义；P-FLOOD 草案标注「引用 T9 草案·未会签·单边定稿无效」。
 - **会签要求**：T9 须经节点 PM 会签（KNET-CC，影响节点实现侧的签名/验签代码）后方可标「定稿」；未会签前本节为「技术定稿口径（草案）」。
+
+#### 9.3.5 变更说明：权重字段名钉死 `trust_weight`
+
+> **变更编号:** T9·KNET-CC-011·波0（会签前阻断项）
+> **裁定依据:** E2 复核发现（字段名歧义）+ PM 裁定 2026-08-09
+> **变更内容:** §9.3.2 第 5 项与 §9.3.4 P-FLOOD 落点的 T3 权重字段名统一钉死为 `trust_weight`（int8, -127~100）；废弃旧歧义表述 `weight` / `trust_score`。
+> **钉死理由:** 签名覆盖范围是跨实现强一致契约（§9.3.2 已规定 JCS 规范化签名，字段名须固定，否则跨节点验签失败）；向节点 02 篇实现基线对齐（`dns_hosts.trust_weight` / `contacts.trust_weight` / `answer.trust_weight` 全量统一）；与 T1/T3/T4/T8 四草案正文统一。语义自明——`trust_weight` 优于无修饰的 `weight`（易与 SRV weight 混淆），优于 `trust_score`（score 暗示浮点而 T3 明定 int8）。
 
 ### 9.4 裁决交付物清单（交 P-DOC / P-FLOOD / X-QA）
 
