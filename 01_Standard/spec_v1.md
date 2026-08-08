@@ -23,10 +23,11 @@ ADRP follows a two-layer architecture:
    port. This layer provides structured, typed service discovery that
    existing DNS infrastructure already supports.
 
-2. **TXT Layer:** Minimal identity metadata (UUID/DID, public key,
-   nickname) encoded as a semicolon-separated key=value string in a DNS
-   TXT record. This layer is constrained by the TXT record size limit
-   and is designed for fast, universal resolution.
+2. **TXT Layer:** Identity metadata expressed via the `did:dns:`
+   three-record model (identity declaration, public key, blacklist)
+   defined in the [DID-DNS Protocol](./did-dns-protocol.md). Each record
+   is constrained to ≤200 bytes. This layer is designed for fast,
+   universal resolution.
 
 This separation ensures that DNS remains fast and minimal — SRV handles
 typed service discovery natively, while identity lives in the flexible
@@ -85,10 +86,23 @@ ADRP defines three SRV service names under the `_tcp` protocol:
 A Client issues standard SRV queries (RFC 2782) for the relevant service
 name under the target domain name.
 
-### 2.3. Identity TXT Record
+### 2.3. Identity TXT Records (DID-DNS)
 
-An Identity TXT Record is a DNS TXT record encoded as a semicolon-
-separated key=value string containing minimal identity metadata.
+An Identity is expressed via a set of DNS TXT records using the
+`did:dns:` prefix, defined in detail in the [DID-DNS Protocol](./did-dns-protocol.md).
+Three record types carry the identity metadata:
+
+| Prefix | Record Type | Required |
+|--------|-------------|----------|
+| `did:dns:v=...` | Identity declaration (version, fingerprint, nickname, gender, timestamps) | Yes |
+| `did:dns:pk;...` | Public key (key type + full public key) | Yes |
+| `did:dns:black;...` | Blacklist of revoked key fingerprints | No |
+
+> **Migration note (C-1, 9.2/9.3, 2026-08-08):** The legacy single-record
+> format `id=<uuid>;key=<hex>;nick=<name>[;ipfs=<bool>]` is **deprecated**.
+> Identity is now carried by the DID-DNS three-record model. See
+> [DID-DNS Protocol §2](./did-dns-protocol.md) for the authoritative field
+> definitions and `DECISIONS.md` §9.2 for the migration mapping.
 
 ### 2.4. Client
 
@@ -153,55 +167,107 @@ present, it MUST fall back to the standard port (see Section 3.3).
 
 ### 3.2. TXT Record — Identity Metadata
 
-#### 3.2.1. Format
+### 3.2.1. Format
 
-The identity TXT record uses a semicolon-separated key=value format:
+> **Rewritten per C-1 decision (9.2/9.3, 2026-08-08).** The legacy
+> single-record format is deprecated. The authoritative definition lives
+> in the [DID-DNS Protocol §2](./did-dns-protocol.md); this section mirrors
+> it for protocol completeness.
+
+The identity metadata is carried by three TXT record types, distinguished
+by their `did:dns:` prefix:
 
 ```
-id=<uuid>;key=<hex_public_key>;nick=<nickname>[;ipfs=<bool>]
+did:dns:v=1;fp=<fingerprint>;n=<nickname>;g=<gender>;iat=<issued>;exp=<expires>
+did:dns:pk;kty=ed25519;pk=<public-key>
+did:dns:black;fp=<fingerprint1>,<fingerprint2>,...
 ```
 
-**Fields:**
+**Identity declaration record (`did:dns:v=1;...`) — required:**
 
-| Key     | Required | Description                                          |
-|---------|----------|------------------------------------------------------|
-| `id`    | REQUIRED | Unique identifier (UUID v4 or DID format)             |
-| `key`   | REQUIRED | Hex-encoded long-term public key (e.g., secp256k1)   |
-| `nick`  | OPTIONAL | Human-readable display name                          |
-| `ipfs`  | OPTIONAL | Boolean (`true`/`false`) indicating IPFS gateway     |
+| Key | Required | Description |
+|-----|----------|-------------|
+| `v` | REQUIRED | Protocol version, fixed `1` |
+| `fp` | REQUIRED | Public key fingerprint: `Base64URL(SHA-256(full public key)[0:12])`, 16 chars |
+| `n` | OPTIONAL | Nickname, `Base64URL(UTF-8)` encoded |
+| `g` | OPTIONAL | Gender, single letter: `M` / `F` / `O` / `X` |
+| `iat` | REQUIRED | Issued time, Unix seconds (integer) — for freshness check |
+| `exp` | REQUIRED | Expiry time, Unix seconds (integer) |
+
+**Public key record (`did:dns:pk;...`) — required:**
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `kty` | REQUIRED | Key type, MUST be `ed25519` |
+| `pk` | REQUIRED | Full public key, Base64URL encoded (32 bytes → ~43 chars) |
+
+**Blacklist record (`did:dns:black;...`) — optional:**
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `fp` | OPTIONAL | Comma-separated list of revoked key fingerprints |
 
 **Constraints:**
 
-- All values MUST be percent-encoded if they contain semicolons or
-  equals signs. Values SHOULD avoid these characters when possible.
-- `id` MUST be unique across the KirinNet network.
-- `key` MUST be the hex-encoded uncompressed public key without a `0x`
-  prefix. The RECOMMENDED key type is secp256k1 (65 bytes → 130 hex chars).
-- `nick` SHOULD be at most 64 characters.
-- Fields MAY appear in any order.
-- Unknown keys are silently ignored by the Client.
+- The fingerprint `fp` in the identity declaration MUST equal
+  `Base64URL(SHA-256(pk)[0:12])` computed over the full public key in the
+  `pk` record. This forms a tamper-evident chain binding the identity
+  declaration to the public key.
+- The public key type `kty` MUST be `ed25519` (Ed25519, 32 bytes). Other
+  key types (e.g., RSA, secp256k1) are **deprecated** and MUST NOT be
+  newly introduced. (C-3 / 9.1 — see `DECISIONS.md` §9.2.3.)
+- The `iat` value MUST be within ±5 minutes of the current time at
+  resolution (freshness check, anti-replay of stale records).
+- Each TXT record MUST be at most 200 bytes to avoid DNS UDP
+  fragmentation (see `DECISIONS.md` §9.2.4 for measured sizes:
+  declaration 73B / public key 69B / blacklist 44B).
+- Records MAY appear in any order; the Client classifies them by prefix.
+- Unknown sub-keys within a record are silently ignored by the Client.
 
 **Examples:**
 
 ```
-; Full identity record
-id=550e8400-e29b-41d4-a716-446655440000;key=04a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6;nick=Alice;ipfs=false
+; Identity declaration (73 bytes)
+did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078
 
-; Minimal record (only required fields)
-id=660e8400-e29b-41d4-a716-446655440001;key=04b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+; Public key — Ed25519 (69 bytes)
+did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA...
+
+; Blacklist — revoked fingerprints (44 bytes, 2 fingerprints)
+did:dns:black;fp=OldKeyFp1aaaa,OldKeyFp2aaaa
 ```
+
+> **Migration mapping (legacy → new):** `id=<uuid>` → identity anchor now
+> carried by domain + fingerprint chain (UUID deprecated); `key=<hex>`
+> (secp256k1, 130 hex) → `did:dns:pk;kty=ed25519;pk=<Base64URL>`
+> (Ed25519); `nick=<plaintext>` → `n=<Base64URL(UTF-8)>`;
+> `ipfs=<bool>` → **deprecated** (no DID-DNS equivalent; IPFS gateway, if
+> needed, uses SRV extension `_kirinnet-ipfs._tcp`). New fields: `fp`
+> (fingerprint chain), `g` (gender), `iat`/`exp` (time window),
+> `did:dns:black` (revocation). Full mapping in `DECISIONS.md` §9.2.2.
 
 #### 3.2.2. Coexistence with Other TXT Records
 
-The identity TXT record is placed alongside other TXT records (SPF,
-DKIM, DMARC). The Client MUST identify the KirinDNS identity record by
-scanning TXT records for the `id=` and `key=` prefixes. The first TXT
-record whose value starts with `id=` and contains at least the `key=`
-field is the identity record.
+The identity TXT records are placed alongside other TXT records (SPF,
+DKIM, DMARC). The Client MUST identify the KirinDNS identity records by
+scanning TXT records for the `did:dns:` prefix and classifying them by
+the three sub-types (`v=`, `pk;`, `black;`), consistent with the
+[DID-DNS Protocol §6](./did-dns-protocol.md) and [DNS Automation §3](./dns_automation.md).
 
-A domain MAY have at most ONE identity TXT record. If multiple TXT
-records match the identity format, the Client SHOULD use the first one
-encountered.
+- A TXT record starting with `did:dns:v=` is the identity declaration.
+- A TXT record starting with `did:dns:pk;` is the public key record.
+- A TXT record starting with `did:dns:black;` is the blacklist record.
+- Any other TXT record (SPF/DKIM/DMARC/etc.) is ignored for identity
+  purposes but left intact for its original consumer.
+
+> **Migration note (C-1, 9.2):** The legacy "scan for `id=` + `key=`
+> prefixes" logic is **deprecated**. Identity records are now identified
+> by the `did:dns:` prefix.
+
+A domain SHOULD have exactly ONE identity declaration record and ONE
+public key record. The blacklist record is optional. If multiple records
+of the same sub-type are encountered, the Client SHOULD use the first
+one of each and log a warning.
 
 ### 3.3. Resolution Process
 
@@ -258,20 +324,39 @@ resolved IP address and port.
 The Client issues a standard DNS TXT query for the target domain using
 an encrypted DNS transport.
 
-**Step 2 — Scan for Identity Record**
+**Step 2 — Classify Records by Prefix**
 
-The Client iterates through all returned TXT records. For each record,
-it checks whether the value begins with `id=` and contains a `key=`
-field. The first such record is the identity record.
+The Client iterates through all returned TXT records and classifies
+those beginning with `did:dns:` into three buckets by sub-type
+(consistent with [DID-DNS Protocol §6](./did-dns-protocol.md)):
 
-**Step 3 — Parse Identity**
+- `did:dns:v=...` → identity declaration (parse `v/fp/n/g/iat/exp`)
+- `did:dns:pk;...` → public key (parse `kty/pk`)
+- `did:dns:black;...` → blacklist (parse the `fp` list)
 
-The Client splits the record value on semicolons (`;`) and parses each
-segment as `key=value`. Recognized keys are extracted into an identity
-object. Unknown keys are silently ignored.
+Non-`did:dns:` TXT records are ignored for identity purposes.
 
-If no identity TXT record is found, the Client proceeds with a null
-identity (no peer verification via KirinDNS identity).
+**Step 3 — Verify Fingerprint Chain**
+
+The Client verifies the tamper-evident binding between the identity
+declaration and the public key:
+
+1. Recompute the fingerprint from the public key record:
+   `fp' = Base64URL(SHA-256(full public key bytes)[0:12])`.
+2. Compare `fp'` against the `fp` field in the identity declaration.
+   They MUST match exactly; otherwise the records are treated as invalid.
+3. Check freshness: `iat` MUST be within ±5 minutes of the current time
+   (anti-replay of stale records); `exp` MUST be in the future.
+4. Check revocation: the `fp` value MUST NOT appear in the `black` list.
+5. The public key type `kty` MUST be `ed25519`; any other type is
+   rejected.
+
+If no `did:dns:` identity records are found, the Client proceeds with a
+null identity (no peer verification via KirinDNS identity).
+
+> **Migration note (C-1, 9.2):** The legacy "split on `;` and parse
+> `id=`/`key=`/`nick=`/`ipfs=`" logic is **deprecated**, replaced by the
+> prefix-classification + fingerprint-chain verification above.
 
 
 ## 4. Security Considerations
@@ -303,8 +388,17 @@ options:
 
 1. **Fallback mode (RECOMMENDED):** Treat the ADRP records as invalid
    and fall back to the standard port. This preserves connectivity.
+   Note: for **identity records** (`did:dns:`), fallback means proceeding
+   with a null identity (no peer verification), not silently accepting
+   unvalidated identity records.
 2. **Strict mode (OPTIONAL):** Abort the connection entirely and report
    an error. Appropriate for high-security contexts.
+
+> **Fail-closed default (9.1 / R6):** When DNSSEC validation fails for
+> identity records, the safe default is fail-closed (reject / null
+> identity + warning). Any exception that silently accepts unvalidated
+> identity records MUST be justified and approved via a KNET-CC change
+> control. Connectivity fallback for SRV port records remains RECOMMENDED.
 
 ### 4.3. Encrypted DNS Transport (DoT/DoH)
 
@@ -312,6 +406,14 @@ ADRP SRV and TXT queries MUST be sent over an encrypted DNS transport:
 DNS-over-TLS (DoT) as defined in [RFC 7858], or DNS-over-HTTPS (DoH) as
 defined in [RFC 8484]. Unencrypted DNS (UDP/TCP port 53) MUST NOT be
 used for ADRP queries.
+
+**Fail-closed handling of plaintext DNS (9.2 / R6):** If an identity
+record (`did:dns:`) is observed returning via plaintext DNS (UDP/TCP
+53), the Client MUST treat it as untrusted — either reject it outright
+or raise a downgrade warning to the user. The Client MUST NOT silently
+accept plaintext-resolved identity records. This is consistent with
+[security_model_v1.md §7.3](./security_model_v1.md) (DNS poisoning threat
+and fail-closed requirement).
 
 ### 4.4. Port Exhaustion and Denial-of-Service
 
@@ -367,8 +469,11 @@ IANA is requested to register the following SRV service names under the
 
 ### 6.2. TXT Record Format
 
-No new IANA registries are required. The identity TXT record format is
-defined within this specification only.
+No new IANA registries are required. The identity TXT record format
+(`did:dns:` three-record model) is defined in the
+[DID-DNS Protocol §2](./did-dns-protocol.md); this specification references
+it (see §3.2.1) rather than redefining it. The SRV service names in §6.1
+remain the IANA-facing registry managed by this specification.
 
 
 ## 7. References
@@ -402,3 +507,11 @@ defined within this specification only.
 
 [RFC 9110] Fielding, R. and M. Hadley, "HTTP Semantics", RFC 9110,
            DOI 10.17489/RFC9110, June 2022.
+
+
+## 8. Revision History
+
+| Version | Date | Change | Reference |
+|---|---|---|---|
+| 2.0 | 2026-07-09 | Initial ADRP v2.0: SRV (RFC 2782) service discovery + TXT identity metadata | — |
+| 2.1 | 2026-08-08 | **C-1 migration (9.2/9.3):** §2.3 / §3.2.1 / §3.2.2 / §3.3.2 migrated to the DID-DNS three-record model (`did:dns:v`/`pk`/`black`) with Ed25519 + fingerprint chain; legacy `id=;key=;nick=;ipfs=` single-record format deprecated. §4.3 strengthened with fail-closed plaintext-DNS handling; §4.2 fail-closed DNSSEC default added; §6.2 references did-dns-protocol.md for the authoritative TXT format. Per `DECISIONS.md` §9.2 (P-ARCH ruling). | C-1 · 9.2 · 9.3 · 波0 |
