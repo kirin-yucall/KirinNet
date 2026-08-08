@@ -55,16 +55,16 @@ ADRP v2.0 用**两层 DNS 记录**完成「服务端口发现 + 身份元数据�
 | 5 | Go | `kirindns.ResolveService(domain, service)` → `(*SRVResult, error)` | `kirindns.ResolveIdentity(domain)` → `(*Identity, error)` | `kirindns.Resolve(domain)` → `(ResolvedPorts, error)` | Go 1.21+，stdlib |
 | 6 | C | `kirin_resolve_service(domain, service, &srv)` → `int` | `kirin_resolve_identity(domain, &id)` → `int` | `kirin_resolve(domain, &ports)` → `int` | C99，`libresolv` |
 | 7 | C++ | `kirin::resolveService(domain, service)` → `optional<SrvResult>` | `kirin::resolveIdentity(domain)` → `optional<Identity>` | `kirin::resolve_kirin_dns(domain)` → `KirinDnsResult` | C++17 header-only，`libresolv` |
-| 8 | C# | —（**波 1 待迁移**） | —（**波 1 待迁移**） | `await KirinDns.ResolveAsync(domain)` → `Task<KirinPorts>` | .NET 6+ |
-| 9 | Java | —（**波 1 待迁移**） | —（**波 1 待迁移**） | `KirinDns.resolve(domain)` → `KirinDns.Ports` | JDK 11+，JNDI DNS |
-| 10 | Kotlin | —（**波 1 待迁移**） | —（**波 1 待迁移**） | `KirinDns.resolve(domain)` → `KirinPorts` | Kotlin/JVM，`javax.naming` |
+| 8 | C# | `await KirinDns.ResolveServiceAsync(domain, service)` → `Task<KirinSrvResult?>` | `await KirinDns.ResolveIdentityDidDnsAsync(domain)` → `Task<DidDnsIdentity?>` | `await KirinDns.ResolveAsync(domain)` → `Task<KirinPorts>`（legacy，v1 端口 dict） | .NET 6+ |
+| 9 | Java | `KirinDns.resolveService(domain, service)` → `SrvResult` | `KirinDns.resolveIdentityDidDns(domain)` → `DidDnsIdentity` | `KirinDns.resolve(domain)` → `KirinPorts`（legacy） | JDK 11+，JNDI DNS |
+| 10 | Kotlin | `resolveService(domain, service)` → `SrvResult?` | `resolveIdentityDidDns(domain)` → `DidDnsIdentity?` | `resolve(domain)` → `KirinPorts`（legacy） | Kotlin/JVM，`javax.naming` |
 | 11 | Ruby | `KirinDNS.resolve_service(domain, service)` → `Hash \| nil` | `KirinDNS.resolve_identity(domain)` → `Hash \| nil` | `KirinDNS.resolve_kirin_dns(domain)` → `Hash` | Ruby stdlib（`resolv`/`json`） |
 | 12 | Swift | `try await KirinDNS.resolveService(domain, service)` → `SrvResult?` | `try await KirinDNS.resolveIdentity(domain)` → `KirinIdentity?` | （v2 wrapper 内置） | Foundation + `dig` |
 | 13 | PHP | `KirinDNS\resolveService($domain, $service)` → `?array` | `KirinDNS\resolveIdentity($domain)` → `?array` | （v2 wrapper 内置） | PHP 8.0+，`dns_get_record` |
 | 14 | Dart | `await KirinDns.resolveService(domain, service)` → `SrvResult?` | `await KirinDns.resolveIdentity(domain)` → `Map?` | （v2 wrapper 内置） | Dart 3.0+，`dart:io` UDP |
 | 15 | Lua | `kirin.resolveService(domain, service)` → `table?` | `kirin.resolveIdentity(domain)` → `table?` | （v2 wrapper 内置） | Lua 5.1+，`luasocket` |
 
-> C# / Java / Kotlin 当前仍是 v1 TXT-JSON 模型（`resolve(domain)→{http,https,ws,wss}`），波 1 D07 将重写为 v2（SRV+TXT+身份）。
+> C# / Java / Kotlin 的 v2 主 API（`ResolveService`/`resolveService` + did:dns 身份解析）已在 D07（2026-08-09）落地，与 12 门已迁移语言同基线；`resolve(domain)` legacy 入口保留作向后兼容。三门本机缺 .NET/JDK/Kotlin 工具链未实跑，CI 已配 job（见 Tested 表）。
 
 ---
 
@@ -74,12 +74,12 @@ ADRP v2.0 用**两层 DNS 记录**完成「服务端口发现 + 身份元数据�
 02_Libraries/
 ├── c/            kirin_dns.h + kirin_dns.c        (C99, libresolv)
 ├── cpp/          kirin_dns.hpp                    (C++17, header-only, libresolv)
-├── csharp/       KirinDns.cs                      (.NET 6+, v1 待波1重写)
+├── csharp/       KirinDns.cs                      (.NET 6+, did:dns + SRV, D07)
 ├── dart/         kirin_dns.dart                   (Dart 3.0+, dart:io UDP)
 ├── go/           kirin_dns.go + kirin_dns_test.go (Go 1.21+, stdlib)
-├── java/         KirinDns.java                    (JDK 11+, JNDI, v1 待波1重写)
+├── java/         KirinDns.java                    (JDK 11+, JNDI, did:dns + SRV, D07)
 ├── javascript/   kirin_dns.js + kirin_dns.d.ts    (Node.js ≥18)
-├── kotlin/       KirinDns.kt                      (Kotlin/JVM, javax.naming, v1 待波1重写)
+├── kotlin/       KirinDns.kt                      (Kotlin/JVM, javax.naming, did:dns + SRV, D07)
 ├── lua/          kirin_dns.lua                    (Lua 5.1+, luasocket)
 ├── php/          kirin_dns.php                    (PHP 8.0+, dns_get_record)
 ├── python/       kirin_dns.py + tests/            (dnspython, pytest)
@@ -193,15 +193,21 @@ local srv = kirin.resolveService("alice.kirinnet.org", "ws")  -- {target=..., po
 local id  = kirin.resolveIdentity("alice.kirinnet.org")        -- {id=..., key=..., nick=...} 或 nil
 ```
 
-**C# / Java / Kotlin（当前 v1，波 1 重写为 v2）：**
+**C# / Java / Kotlin（D07 已对齐 v2 did:dns；本机缺工具链，待 CI 实跑）：**
 ```csharp
-var ports = await KirinDns.ResolveAsync("alice.kirinnet.org");  // KirinPorts{Http,Https,Ws,Wss}
+// v2 主 API
+var srv = await KirinDns.ResolveServiceAsync("alice.kirinnet.org", "ws");   // KirinSrvResult?
+var id  = await KirinDns.ResolveIdentityDidDnsAsync("alice.kirinnet.org");  // DidDnsIdentity?
 ```
 ```java
-KirinDns.Ports ports = KirinDns.resolve("alice.kirinnet.org");  // {http, https, ws, wss}
+// v2 主 API
+KirinDns.SrvResult    srv = KirinDns.resolveService("alice.kirinnet.org", "ws");        // 可为 null
+KirinDns.DidDnsIdentity id = KirinDns.resolveIdentityDidDns("alice.kirinnet.org");      // 可为 null
 ```
 ```kotlin
-val ports = KirinDns.resolve("alice.kirinnet.org")  // KirinPorts(http, https, ws, wss)
+// v2 主 API
+val srv = resolveService("alice.kirinnet.org", "ws")        // SrvResult?
+val id  = resolveIdentityDidDns("alice.kirinnet.org")       // DidDnsIdentity?
 ```
 
 ---
@@ -210,29 +216,30 @@ val ports = KirinDns.resolve("alice.kirinnet.org")  // KirinPorts(http, https, w
 
 | 档位 | 含义 |
 |---|---|
-| ✅ 已测 | 已跑门禁命令并通过（单测 / smoke 全绿） |
-| 🟡 已迁移待补测 | 源码已对齐 v2.0，但 SRV 主路径单测待补（波 1 D07） |
-| 🔴 待迁移 | 仍是 v1 TXT-JSON 模型，波 1 D07 重写为 v2 |
+| ✅ 已测（真机） | 本机已跑门禁命令并通过（单测 / self-test 全绿） |
+| 🟡 代码就绪·待实机 | 源码已对齐 v2.0（SRV + did:dns + 身份），本机缺工具链无法实跑；CI 已配该语言 job，待 CI 出绿 |
+| 🔴 待迁移 | 仍是 v1 TXT-JSON 模型（D07 后已清零，本档保留作占位） |
+
+> 说明：D07（2026-08-09）已完成 15 语言全部对齐 ADRP v2.0——C#/Java/Kotlin 三门已从 v1 TXT-JSON 重写为 did:dns 三记录 + SRV 新基线（源码完整，仅本机缺 .NET/JDK/Kotlin 工具链未实跑），不再有「待迁移」。`🔴 待迁移` 档位保留为占位，当前无任何语言落入此档。
 
 | 语言 | 门禁命令 | 当前状态 | 说明 |
 |---|---|---|---|
-| Python | `pytest tests/` | ✅ 已测 | 29 passed / 9 skipped（v1 端口解析类标注波1重写） |
-| JavaScript | `node javascript/kirin_dns.js`（self-test） | 🟡 已迁移待补测 | self-test 通过；SRV 路径单测待补（D07） |
-| TypeScript | `tsc --noEmit javascript/kirin_dns.d.ts` | 🟡 已迁移待补测 | 类型定义已对齐 v2 实现 |
-| C | `gcc -std=c99 ... -DTEST`（self-test） | 🟡 已迁移待补测 | self-test 通过；SRV 主路径单测待补 |
-| C++ | `g++ -std=c++17 ... -DTEST_KIRIN_DNS`（self-test） | 🟡 已迁移待补测 | self-test 通过；SRV 主路径单测待补 |
-| Go | `go test ./...` | 🟡 已迁移待补测 | **注意假绿**：现有 test 仅测 v1 `parseTxtV1`，未验 SRV 主路径，波 1 须迁出后重验 |
-| Rust | `cargo test` | 🟡 已迁移待补测 | 单测覆盖 v1 解析 + v2 `Identity::parse`/`srv_service_name`；SRV 实查待补 |
-| Swift | `swift test` | 🟡 已迁移待补测 | 待补 |
-| Dart | `dart test` | 🟡 已迁移待补测 | 待补 |
-| Lua | `lua ...` | 🟡 已迁移待补测 | 待补 |
-| PHP | `php ...` | 🟡 已迁移待补测 | 待补 |
-| Ruby | `ruby ...` | 🟡 已迁移待补测 | 待补 |
-| C# | `dotnet test` | 🔴 待迁移 | v1 TXT-JSON，波 1 重写为 v2 SRV+TXT+身份 |
-| Java | `javac && java -ea` | 🔴 待迁移 | v1 TXT-JSON，波 1 重写为 v2 |
-| Kotlin | `kotlinc -include-runtime ...` | 🔴 待迁移 | v1 TXT-JSON，波 1 重写为 v2 |
+| Python | `pytest tests/` | ✅ 已测（真机） | **52 passed / 9 skipped / 0 error**（v1 端口解析类 9 例 skip 标注波1重写，did:dns/SRV 主路径全绿） |
+| JavaScript | `node javascript/kirin_dns.js`（self-test） | ✅ 已测（真机） | self-test **43 passed**（SRV + did:dns 身份解析主路径全覆盖） |
+| Rust | `cargo test` | ✅ 已测（真机） | **27 passed + 2**（v1 解析 + v2 `Identity::parse`/`srv_service_name`/SRV 实查覆盖） |
+| C | `gcc -std=c99 ... -DTEST_KIRIN_DNS`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2（SRV + did:dns），本机缺 libresolv 环境未实跑；CI `c-tests` job 已配 |
+| C++ | `g++ -std=c++17 ... -DTEST_KIRIN_DNS`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2（header-only），本机缺环境；CI `cpp-tests` job 已配 |
+| Go | `go test ./...` | 🟡 代码就绪·待实机 | 源码已对齐 v2；**注意假绿**：现有 test 偏重 v1 `parseTxtV1`，SRV 主路径已写但本机无 Go 工具链，待 CI `go-tests` 实跑核验 |
+| C# | `dotnet build/run`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`ResolveService`/`ResolveIdentityDidDns`），本机无 .NET；CI `csharp-tests` job 已配 |
+| Java | `javac && java -ea`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`resolveService`/`parseDidDnsIdentity`），本机无 JDK；CI `java-tests` job 已配 |
+| Kotlin | `kotlinc -include-runtime ...`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`resolveService`/`parseDidDnsIdentity`），本机无 Kotlin/JVM；CI `kotlin-tests` job 已配 |
+| Swift | `swift run`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Swift；CI `swift-tests` job 已配 |
+| Dart | `dart run`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Dart；CI `dart-tests` job 已配 |
+| Lua | `lua kirin_dns.lua`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Lua 5.1；CI `lua-tests` job 已配 |
+| PHP | `php kirin_dns.php`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 PHP；CI `php-tests` job 已配 |
+| Ruby | `ruby kirin_dns.rb`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Ruby；CI `ruby-tests` job 已配 |
 
-> CI 矩阵（`.github/workflows/ci.yml`）当前仅覆盖 Python/JS/Go/Rust + lint，**11 语言无 CI**，波 1 扩展到 15 语言。
+> CI 矩阵（`.github/workflows/ci.yml`）已扩到 **15 语言矩阵 = 14 语言 job + lint**：Python(3.9-3.12)/JS(Node18/20/22)/Go/Rust/C/C++/C#/Java/Kotlin/Swift/Dart/Lua/PHP/Ruby 各跑 self-test，外加 lint（flake8 + eslint）。各门禁命令与上表「门禁命令」列一致。
 
 ---
 
@@ -246,5 +253,6 @@ val ports = KirinDns.resolve("alice.kirinnet.org")  // KirinPorts(http, https, w
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v2.1 | 2026-08-09 | P-SDK 同步 X-QA 验收遗留（D07·9.5·波1 合并前小修）：Tested 三档重定义为「已测（真机）/代码就绪·待实机/待迁移（占位）」；Python 计数 29p→**52 passed/9 skipped**；JavaScript/Rust 标为已测（43 passed / 27+2）；C#/Java/Kotlin 由「🔴 待迁移」改为「🟡 代码就绪·待实机」（D07 已重写为 did:dns + SRV 新基线）；CI 说明「11 语言无 CI」→「15 语言矩阵 = 14 语言 job + lint」；API 对照表/Quick Start/目录结构注释补三门 v2 导出符号与基线状态 |
 | v2.0 | 2026-08-08 | P-SDK 重写：对齐 ADRP v2.0（SRV+TXT 双层）；API 表逐语言对照真实导出符号；Quick Start 改 v2 主 API；Tested 三档（已测/已迁移待补测/待迁移）；标注 C#/Java/Kotlin 波1重写、Go 假绿 |
 | v1.0 | （历史） | 旧 v1 口径：`resolve_kirin_dns(domain)→{http,https,ws,wss}` TXT-JSON 端口（**已过时**） |
