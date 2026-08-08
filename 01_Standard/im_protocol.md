@@ -1,23 +1,27 @@
 # KirinNet P2P Instant Messaging Protocol
 
-**Version:** 1.0
+**Version:** 1.2
 **Status:** Draft
-**Date:** 2026-07-09
+**Date:** 2026-08-08
 
 ---
 
 ## 1. Overview
 
-KirinNet P2P IM is a domain-identity-based, RSA-encrypted, peer-to-peer
-instant messaging protocol. Each User Node is identified by its domain
-name. Messages are encrypted end-to-end between User Nodes.
+KirinNet P2P IM is a domain-identity-based, Ed25519-signed and
+HPKE-encrypted, peer-to-peer instant messaging protocol. Each User Node
+is identified by its domain name. Messages are signed by the sender and
+encrypted end-to-end between User Nodes. Identity keys are Ed25519;
+session encryption uses HPKE (RFC 9180) with Ed25519→X25519 conversion,
+providing per-session Perfect Forward Secrecy (PFS) in v1.
 
 ---
 
 ## 2. Identity
 
 - **Domain name** is the unique identifier (e.g., `alice.kirinnet.org`)
-- Each User Node generates a **Long-term RSA Key Pair** (4096-bit) on startup
+- Each User Node generates a **Long-term Ed25519 Key Pair** (32-byte
+  public key) on startup
 - The long-term public key is published via `/kirin/profile`
 - The long-term private key is stored locally and never transmitted
 
@@ -31,11 +35,16 @@ name. Messages are encrypted end-to-end between User Nodes.
 - Used to verify identity during friend requests
 - Published in `/kirin/profile` as `identity_key`
 
-### 3.2. Session Key (Friendship Key)
+### 3.2. Session Key (Friendship Key) — PFS in v1
 
-- Generated when a friend relationship is accepted
-- One key pair per friendship (per-friend isolation)
-- Used to encrypt/decrypt messages between the two friends
+- Generated when a friend relationship is accepted, via X25519 ECDH
+  (each side converts its Ed25519 identity key to X25519 and contributes
+  an ephemeral X25519 key for forward secrecy)
+- One session per friendship (per-friend isolation)
+- Session keys are **rotated** on each session (ECDH ratchet) to provide
+  **Perfect Forward Secrecy (PFS)** — compromise of a current session key
+  does not reveal past messages
+- Used to encrypt/decrypt message bodies via HPKE (AES-256-GCM)
 - Stored in the local `friends` table
 
 ### 3.3. Key Exchange Flow
@@ -43,17 +52,19 @@ name. Messages are encrypted end-to-end between User Nodes.
 ```
 Alice (alice.kirinnet.org)          Bob (bob.kirinnet.org)
      |                                   |
-     |--- POST /kirin/friend/request --->|  Contains Alice's identity_key
+     |--- POST /kirin/friend/request --->|  Contains Alice's identity_key (Ed25519)
      |                                   |  Bob stores request (status: pending)
      |                                   |
-     |<-- POST /kirin/friend/accept ------|  Bob accepts, sends his identity_key
+     |<-- POST /kirin/friend/accept ------|  Bob accepts, sends his identity_key (Ed25519)
      |                                   |
-     |=== Session Key Exchange ===|  Alice generates session key pair,
-     |                                   |  encrypts session public key with
-     |                                   |  Bob's identity public key, sends it
-     |<-- Session Key Confirmed ---------|  Bob decrypts with his identity private key
+     |=== Session Key Exchange (X25519 ECDH + HPKE, PFS) ===|
+     |                                   |  Each side generates an ephemeral X25519 key,
+     |                                   |  derives a shared secret via ECDH
+     |                                   |  (Ed25519 identity key → X25519 conversion),
+     |                                   |  and uses HPKE (AES-256-GCM) for the session.
+     |<-- Session Confirmed --------------|  Both sides hold the session key.
      |                                   |
-     |=== Messages encrypted with session keys ===|
+     |=== Messages signed (Ed25519) + encrypted (HPKE) with session keys ===|
 ```
 
 ---
@@ -70,7 +81,7 @@ Content-Type: application/json
 
 {
   "sender_domain": "alice.kirinnet.org",
-  "sender_identity_key": "-----BEGIN RSA PUBLIC KEY-----\n...",
+  "sender_identity_key": "Base64URL(Ed25519 public key, 32 bytes)",
   "message": "Hey, let's chat!"
 }
 ```
@@ -94,7 +105,7 @@ Content-Type: application/json
 
 {
   "friend_domain": "alice.kirinnet.org",
-  "receiver_identity_key": "-----BEGIN RSA PUBLIC KEY-----\n..."
+  "receiver_identity_key": "Base64URL(Ed25519 public key, 32 bytes)"
 }
 ```
 
@@ -143,7 +154,8 @@ Content-Type: application/json
 
 {
   "sender_domain": "alice.kirinnet.org",
-  "content": "<RSA-OAEP encrypted with Bob's session public key>",
+  "content": "<HPKE-encrypted with session key (AES-256-GCM)>",
+  "signature": "<Ed25519 signature over (content || timestamp || sender_domain), Base64URL>",
   "timestamp": 1234567890
 }
 ```
@@ -239,9 +251,11 @@ CREATE TABLE IF NOT EXISTS keys (
      decrypt it without the private key.
 
 2. **Identity verification:**
-   - Friend requests include the sender's identity key (long-term RSA public key).
+   - Friend requests include the sender's identity key (long-term Ed25519
+     public key, published in DNS as `did:dns:pk;kty=ed25519;pk=...`).
    - The recipient can verify the sender's identity by checking the domain
-     matches the key published in `/kirin/profile`.
+     matches the key published in `/kirin/profile` and the DID-DNS TXT
+     record (fingerprint chain, see `did-dns-protocol.md`).
 
 3. **Per-friend key isolation:**
    - Each friendship has its own session key pair.
@@ -255,26 +269,64 @@ CREATE TABLE IF NOT EXISTS keys (
 
 | Threat | Mitigation |
 |--------|-----------|
-| Eavesdropping | RSA encryption ensures only the recipient can decrypt |
-| Impersonation | Identity key verification during friend request |
-| Message tampering | RSA encryption integrity — tampering causes decryption failure |
-| Key compromise | Per-friend session keys limit blast radius |
-| Replay attacks | Timestamps and message IDs allow detection |
+| Eavesdropping | HPKE (AES-256-GCM) encryption ensures only the recipient can decrypt |
+| Impersonation | Identity key verification during friend request (Ed25519, DID-DNS fingerprint chain) |
+| Message tampering | Ed25519 signature + HPKE integrity — tampering causes signature/decryption failure |
+| Key compromise | Per-friend session keys (X25519 ECDH ratchet) limit blast radius |
+| Replay attacks | Timestamps and message IDs allow detection; T9 challenge nonce one-time use |
 
-### 7.3. Limitations
+### 7.3. Security Properties and Limitations
 
-- **No perfect forward secrecy:** If a session private key is compromised,
-  all past messages encrypted with that key can be decrypted.
-  For PFS, ECDH key exchange would be needed (future enhancement).
-- **No authentication of decryption:** If the wrong private key is used,
-  decryption fails silently (random bytes). The protocol relies on the
-  key management service to always use the correct key.
-- **No message signing:** Messages are encrypted but not signed. A
-  compromised User Node could forge messages. (Future: add ECDSA signing.)
+- **Perfect Forward Secrecy (PFS) — included in v1 (9.1):** Session keys
+  are established via X25519 ECDH with ephemeral keys (Ed25519 identity
+  key → X25519 conversion) and ratcheted per session. Compromise of a
+  current session key does NOT reveal past messages. (Previously listed
+  as a limitation; now resolved per the unified Ed25519 decision.)
+- **Authentication of decryption:** If the wrong private key is used,
+  HPKE decryption fails (AEAD authentication tag mismatch). The protocol
+  relies on the key management service to always use the correct key.
+- **Message signing — included in v1 (9.1):** Every message carries an
+  Ed25519 signature over `(content || timestamp || sender_domain)`. A
+  compromised User Node cannot forge another user's messages without
+  their Ed25519 private key.
+
+### 7.4. Signature Challenge-Response (T9 · Draft · Pending KNET-CC Sign-off)
+
+> **Status: Draft — technical specification finalized, pending Node PM
+> sign-off (KNET-CC) before marking as final.**
+> Basis: `DECISIONS.md` §9.3 (P-ARCH technical specification) and
+> `security_model_v1.md` §7.2.1.
+
+Beyond per-message Ed25519 signatures, identity verification between
+nodes uses a signature challenge-response flow (T9):
+
+- **Challenge code:** `c = <nonce>:<timestamp>:<hmac>`, where
+  `hmac = Base64URL(HMAC-SHA256(secret, "<domain>:<timestamp>:<nonce>")[0:12])`.
+  TTL is **60 seconds**; nonce is one-time (replay rejected).
+- **Signature coverage (Ed25519 private key signs the canonical
+  serialization of):**
+  1. The challenge code `c` (plaintext) — anti-tamper + anti-replay.
+  2. The verifier's domain (request origin) — anti cross-domain replay.
+  3. The prover's domain (identity subject) — binds `did:dns:v=1`.
+  4. The flood `forward_chain` (P-FLOOD T1 draft) — anti forward-chain
+     tampering/injection.
+  5. The T3 trust-weight fields (`weight`/`trust_score`, P-FLOOD T3 draft)
+     — anti weight tampering.
+- **MUST NOT cover:** transport-layer metadata (HTTP headers, TLS certs,
+  IPs) — these are guaranteed by the transport layer.
+- **DNS record freshness:** the `iat` of `did:dns:v=1` MUST be within
+  ±5 minutes of the current time.
+
+> **P-FLOOD reference:** T1 (flood message format) `forward_chain` and T3
+> (trust weight) `weight` fields MUST reference this signature coverage
+> (§9.3.2), not redefine it. P-FLOOD drafts must mark "references T9
+> draft — unsigned". **Sign-off requirement:** T9 requires Node PM
+> sign-off (KNET-CC, affects node-side sign/verify code) before final.
 
 ---
 
-> **KirinNet IM Protocol** — Domain-based P2P messaging with RSA encryption.
+> **KirinNet IM Protocol** — Domain-based P2P messaging with Ed25519
+> signatures, HPKE encryption, and Perfect Forward Secrecy (PFS) in v1.
 > Built on [KirinDNS](spec_v1.md) for seamless node discovery.
 
 ---
@@ -285,3 +337,4 @@ CREATE TABLE IF NOT EXISTS keys (
 |---|---|---|---|
 | 1.0 | 2026-07-09 | 首版（Domain-based P2P IM，RSA 加密草案） | — |
 | 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处旧端点前缀 → `/kirin/*`（friend/profile/message/messages/block）；门禁品牌残留巡检零命中 | 9.4 · C-2 · 波0 |
+| 1.2 | 2026-08-08 | **9.1 统一 Ed25519 + PFS 纳入 v1 + T9 签名覆盖（草案）**：§1/§2 密钥 RSA→Ed25519（32 字节）；§3.2/§3.3 session key 改 X25519 ECDH + HPKE + PFS；§4/§5 body 公钥格式与加密改 Ed25519/HPKE + 签名；§7.1/§7.2 威胁表 Ed25519+HPKE；§7.3 PFS/签名从「无」改为「v1 已纳入」；§7.4 新增 T9 签名质询覆盖范围（**草案·待 KNET-CC 会签**） | 9.1 · T9（草案）· KNET-CC-005/006 · 波0 |
