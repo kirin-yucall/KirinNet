@@ -26,6 +26,11 @@ from typing import Dict, Optional
 import dns.resolver
 from dns.exception import DNSException
 
+try:  # JSON parsing is only used by the legacy v1 compatibility layer below.
+    import json
+except ImportError:  # pragma: no cover - json is stdlib, always present
+    json = None
+
 # ---------------------------------------------------------------------------
 # Constants (spec Section 2.2)
 # ---------------------------------------------------------------------------
@@ -156,6 +161,85 @@ def resolve_identity(domain: str) -> Optional[Dict]:
             return identity
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Legacy v1 Compatibility Layer (ADRP JSON TXT → port dict)
+# ---------------------------------------------------------------------------
+#
+# ADRP v1 conveyed ports via a JSON TXT record (`{"http":8080,...}`).
+# ADRP v2 replaces this with SRV records (see resolve_service above) plus a
+# TXT identity record (see resolve_identity). The v1 helpers below are kept
+# for backward compatibility and parity with the other 14 language libraries
+# (Go/Rust/C/C++ all retain a v1 TXT-JSON parser). New code MUST use the v2
+# resolve_service / resolve_identity API directly.
+
+_RECOGNIZED_KEYS = frozenset({"http", "https", "ws", "wss"})
+
+
+def _validate_kirin_dns_record(data) -> bool:
+    """
+    Validate a parsed object as a v1 ADRP record (spec §3.1).
+
+    Rules:
+      - `data` MUST be a dict.
+      - At least one recognized key MUST be present.
+      - Each recognized key's value MUST be an integer in [1, 65535].
+      - Unknown keys are silently ignored.
+
+    Returns True if the record is a valid v1 ADRP record.
+    """
+    if not isinstance(data, dict):
+        return False
+
+    has_recognized = False
+    for key in _RECOGNIZED_KEYS:
+        if key not in data:
+            continue
+        val = data[key]
+        # bool is a subclass of int — reject it explicitly.
+        if isinstance(val, bool) or not isinstance(val, int):
+            return False
+        if val < 1 or val > 65535:
+            return False
+        has_recognized = True
+
+    return has_recognized
+
+
+def _parse_txt_value(text: str) -> Dict:
+    """
+    Parse a single TXT record string as JSON and validate it as a v1 ADRP
+    record. Returns a dict of recognized keys (empty dict if invalid /
+    not JSON / no recognized keys). Mirrors the Go/Rust v1 parsers.
+    """
+    if json is None or not isinstance(text, str):
+        return {}
+
+    stripped = text.strip()
+    if not stripped:
+        return {}
+
+    try:
+        parsed = json.loads(stripped)
+    except (ValueError, TypeError):
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    result: Dict = {}
+    for key in _RECOGNIZED_KEYS:
+        if key not in parsed:
+            continue
+        val = parsed[key]
+        if isinstance(val, bool) or not isinstance(val, int):
+            return {}
+        if val < 1 or val > 65535:
+            return {}
+        result[key] = val
+
+    return result
 
 
 # ---------------------------------------------------------------------------
