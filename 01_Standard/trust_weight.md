@@ -1,12 +1,12 @@
 # KirinNet 信任权重体系（Trust Weight）
 
-> **Version:** 0.1（草案）
-> **Date:** 2026-08-08
-> **Status:** 草案 v0.1 · 未会签 · 单边定稿无效
+> **Version:** 0.2（草案，v0.1 + 字段名统一修订）
+> **Date:** 2026-08-09
+> **Status:** 草案 v0.2 · 未会签 · 单边定稿无效
 > **Scope:** IM 列表结构、好友分级（trust_weight -127~100）、钱包级负权重、转发链权重携带（min 保守聚合）、-127 黑名单
 > **关联编号:** T3（信任权重体系）/ T1（forward_chain 承载权重携带，**引用 T1 草案·未会签**）/ T9（权重字段在签名覆盖范围内，**引用 T9 草案·未会签**）/ T2（钱包地址编码，**引用 T2 不自行定义**）/ FR7（信任权重与防污染）/ FR11（防滥用 -127）
 > **承载关系:** T3 权重字段通过 T1 泛洪包的 `forward_chain` 与 answer 的 `trust_weight` 字段携带；权重字段 MUST 纳入 T9 签名覆盖范围。
-> **签名口径:** T3 权重字段（`weight` / `trust_weight`）在 T9 §9.3.2 签名覆盖范围内，**引用 T9 草案·未会签·单边定稿无效**，P-FLOOD 不重定义。
+> **签名口径:** T3 权重字段（`trust_weight`）在 T9 §9.3.2 签名覆盖范围内，**引用 T9 草案·未会签·单边定稿无效**，P-FLOOD 不重定义。
 
 ---
 
@@ -115,13 +115,13 @@ KirinNet 用**两套机理**防投毒/防污染，本文件管**第二套（运�
 ### 4.3 权重携带流程
 
 ```
-发起方 A (weight=80)
+发起方 A (trust_weight=80)
    │ query (forward_chain=[A], path_weight=80)
    ▼
-好友 B (weight=60) 本地 miss → 转发
+好友 B (trust_weight=60) 本地 miss → 转发
    │ forward_chain=[A,B], path_weight=min(80,60)=60
    ▼
-好友 C (weight=90) 本地命中 → answer
+好友 C (trust_weight=90) 本地命中 → answer
    │ answer(trust_weight=min(80,60)=60, candidates=[...])
    │ （注意：path_weight 取链上 min，不含 C 自身转发权重；C 作为应答方不加入链）
    ▼
@@ -204,6 +204,7 @@ A 聚合 answer（trust_weight=60）
 | T3-6 | IM 列表结构与节点 02 篇 §4 对齐（dns_hosts/contacts 字段） | ✅ §2 |
 | T3-7 | `grep -ri aura` 零残留 | ✅ |
 | T3-8 | 引用编号一致（FR5/FR7/FR11/T1/T2/T3/T4/T8/T9） | ✅ |
+| T3-9 | 字段名统一为 `trust_weight`（去 `weight` 双写），签名覆盖跨实现强一致 | ✅ §0 签名口径 + 全文（E2 复核 + PM 裁定 2026-08-09，KNET-CC-008·波0） |
 
 ---
 
@@ -224,6 +225,7 @@ A 聚合 answer（trust_weight=60）
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v0.2 | 2026-08-09 | **字段名统一为 `trust_weight`（E2 复核 + PM 裁定 2026-08-09，会签前阻断项·KNET-CC-008·波0）:** §0 签名口径行去掉 `weight` 双写（`weight` / `trust_weight` → `trust_weight`）；§4.3 权重携带流程图节点标注 `weight=N` → `trust_weight=N`（信任权重语义，统一向节点实现基线/四草案/02 篇对齐）；新增 §8 自测门禁 T3-9（字段名统一自检）。**理由:** 签名覆盖范围是跨实现强一致契约（JCS 规范化签名，字段名须固定），双写会导致签名跨节点验证失败。注：SRV 记录的 `weight` 字段（DNS 标准字段，本文件 §2.1 `record_type` enum 的 SRV 类型）属不同语义，未改动。**未会签·单边定稿无效**。 |
 | v0.1 | 2026-08-08 | P-FLOOD 首版草案：IM 列表结构（§2，dns_hosts+contacts 对齐 02 篇 §4）+ 好友分级与取值域（§3，-127~100，与 FR5/FR7 一致）+ 转发链权重携带（§4，min 保守聚合防信任冲刷，与 FR7 一致）+ 钱包级负权重（§5，引用 T2 编码不重定义）+ -127 黑名单（§6，双向生效，与 FR7/FR11 一致）+ 与 T4/T8 互引（§7）+ 权重字段纳入 T9 签名覆盖（引用 T9 草案）。**未会签·单边定稿无效**。 |
 
 ---
