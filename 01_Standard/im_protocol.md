@@ -284,4 +284,4 @@ CREATE TABLE IF NOT EXISTS keys (
 | 版本 | 日期 | 变更 | 依据 |
 |---|---|---|---|
 | 1.0 | 2026-07-09 | 首版（Domain-based P2P IM，RSA 加密草案） | — |
-| 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处 `/aura/*` → `/kirin/*`（friend/profile/message/messages/block）；门禁 `grep -ri aura` 零残留 | 9.4 · C-2 · 波0 |
+| 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处旧端点前缀 → `/kirin/*`（friend/profile/message/messages/block）；门禁品牌残留巡检零命中 | 9.4 · C-2 · 波0 |
