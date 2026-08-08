@@ -564,7 +564,7 @@ KirinNet不强制要求政府CA认证。一个用户可以选择：
 **签名质询-应答（T9）技术要点（详见 `DECISIONS.md` §9.3）：**
 
 - 挑战码结构：`c = <nonce>:<timestamp>:<hmac>`，TTL **60 秒**，一次性去重（防重放）。
-- 签名覆盖范围（Ed25519 私钥签名）：挑战码明文 `c` + 校验方域名 + 受验方域名 + 泛洪转发链（P-FLOOD T1 `forward_chain`）+ 信任权重字段（P-FLOOD T3 `weight`）；传输层元数据不签。
+- 签名覆盖范围（Ed25519 私钥签名）：挑战码明文 `c` + 校验方域名 + 受验方域名 + 泛洪转发链（P-FLOOD T1 `forward_chain`）+ 信任权重字段（P-FLOOD T3 `trust_weight`, int8 -127~100）；传输层元数据不签。
 - DNS 记录新鲜度：`did:dns:v=1` 的 `iat` 与当前时间偏差 MUST 在 ±5 分钟内。
 
 **PFS（前向保密）：** IM v1 会话密钥 ECDH 轮换纳入 v1（见 `im_protocol.md` §7）；HPKE 通道每次生成临时 X25519 密钥对，天然具备单次会话 PFS；签名质询本身不提供 PFS（依赖会话层）。
@@ -636,3 +636,4 @@ KirinNet的独特之处：将"好友"本身作为分布式身份账本，同时�
 |---|---|---|---|
 | 1.0 | 2026-08-01 | 首版：三层信任模型、好友系统、心跳预警、强制 DoH/DoT、DNS 投毒威胁分析 | — |
 | 1.1 | 2026-08-08 | **C-7 / 9.1 统一 Ed25519**：全文 RSA（22 处）→ Ed25519（密钥对/公钥/私钥/签名/告警字段 `ed25519_key_hash`/`ed25519_mismatch`/friend URI `ed25519_pub_b64url`）；§4.1 补加密原语说明（Ed25519 签名 + HPKE 加密，Ed25519→X25519 + AES-256-GCM）；§7.2.1 补 T9 签名质询与 HPKE 通道分工（**草案·待 KNET-CC 会签**）；附录对比表 KirinNet 信任锚更新 | C-7 · 9.1 · T9（草案）· KNET-CC-006 · 波0 |
+| 1.2 | 2026-08-09 | **T9 字段名钉死 `trust_weight`（§7.2.1）**：§7.2.1 签名覆盖范围第 5 项信任权重字段 `weight` → `trust_weight`（int8 -127~100），与 `DECISIONS.md` §9.3.2/§9.3.4/§9.3.5（P-ARCH d1fd221）及节点 02 篇基线（dns_hosts/contacts/answer.trust_weight）一致。**变更说明：**依据 KNET-CC-011 节点 PM 附条件通过（2026-08-08 23:45）+ d1fd221 字段名钉死（2026-08-09），本修订为条件履约；签名覆盖范围是跨实现强一致契约（JCS 规范化签名，字段名须固定），消除 `weight`/`trust_score` 歧义（`weight` 易与 DNS SRV weight 混淆，`trust_score` 暗示浮点而 T3 明定 int8） | T9 · KNET-CC-011（节点 PM 附条件履约）· d1fd221 · 波0 |

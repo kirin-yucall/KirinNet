@@ -310,7 +310,7 @@ nodes uses a signature challenge-response flow (T9):
   3. The prover's domain (identity subject) — binds `did:dns:v=1`.
   4. The flood `forward_chain` (P-FLOOD T1 draft) — anti forward-chain
      tampering/injection.
-  5. The T3 trust-weight fields (`weight`/`trust_score`, P-FLOOD T3 draft)
+  5. The T3 trust-weight field (`trust_weight`, int8 -127~100, P-FLOOD T3 draft)
      — anti weight tampering.
 - **MUST NOT cover:** transport-layer metadata (HTTP headers, TLS certs,
   IPs) — these are guaranteed by the transport layer.
@@ -318,7 +318,7 @@ nodes uses a signature challenge-response flow (T9):
   ±5 minutes of the current time.
 
 > **P-FLOOD reference:** T1 (flood message format) `forward_chain` and T3
-> (trust weight) `weight` fields MUST reference this signature coverage
+> (trust weight) `trust_weight` (int8 -127~100) fields MUST reference this signature coverage
 > (§9.3.2), not redefine it. P-FLOOD drafts must mark "references T9
 > draft — unsigned". **Sign-off requirement:** T9 requires Node PM
 > sign-off (KNET-CC, affects node-side sign/verify code) before final.
@@ -338,3 +338,4 @@ nodes uses a signature challenge-response flow (T9):
 | 1.0 | 2026-07-09 | 首版（Domain-based P2P IM，RSA 加密草案） | — |
 | 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处旧端点前缀 → `/kirin/*`（friend/profile/message/messages/block）；门禁品牌残留巡检零命中 | 9.4 · C-2 · 波0 |
 | 1.2 | 2026-08-08 | **9.1 统一 Ed25519 + PFS 纳入 v1 + T9 签名覆盖（草案）**：§1/§2 密钥 RSA→Ed25519（32 字节）；§3.2/§3.3 session key 改 X25519 ECDH + HPKE + PFS；§4/§5 body 公钥格式与加密改 Ed25519/HPKE + 签名；§7.1/§7.2 威胁表 Ed25519+HPKE；§7.3 PFS/签名从「无」改为「v1 已纳入」；§7.4 新增 T9 签名质询覆盖范围（**草案·待 KNET-CC 会签**） | 9.1 · T9（草案）· KNET-CC-005/006 · 波0 |
+| 1.3 | 2026-08-09 | **T9 字段名钉死 `trust_weight`（§7.4）**：§7.4 签名覆盖范围第 5 项信任权重字段 `weight`/`trust_score` → `trust_weight`（int8 -127~100）；P-FLOOD 引用说明 `weight` → `trust_weight`。与 `DECISIONS.md` §9.3.2/§9.3.4/§9.3.5（P-ARCH d1fd221）及节点 02 篇基线一致。**变更说明：**依据 KNET-CC-011 节点 PM 附条件通过（2026-08-08 23:45）+ d1fd221 字段名钉死（2026-08-09），本修订为条件履约；签名覆盖范围是跨实现强一致契约（JCS 规范化签名，字段名须固定），消除 `weight`/`trust_score` 歧义 | T9 · KNET-CC-011（节点 PM 附条件履约）· d1fd221 · 波0 |
