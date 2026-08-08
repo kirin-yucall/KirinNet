@@ -37,6 +37,7 @@
  */
 
 const dns = require('dns');
+const crypto = require('crypto');
 
 // SRV service names (spec Section 2.2)
 const SRV_SERVICES = {
@@ -44,6 +45,15 @@ const SRV_SERVICES = {
   https: '_kirinnet-https._tcp',
   ws:    '_kirinnet-ws._tcp',
 };
+
+// did:dns protocol constants (spec §3.2.1 / did-dns-protocol §2, C-1 baseline)
+const DID_DNS_PREFIX = 'did:dns:';
+const DID_DNS_DECL = 'did:dns:v=';
+const DID_DNS_PK = 'did:dns:pk;';
+const DID_DNS_BLACK = 'did:dns:black;';
+const DID_DNS_KTY_ED25519 = 'ed25519';
+const DID_DNS_FRESHNESS_WINDOW = 5 * 60;       // ±5 minutes (spec §3.2.1)
+const DID_DNS_FINGERPRINT_BYTES = 12;          // SHA-256[0:12] -> 16 base64url chars
 
 // Fallback ports (spec Section 3.3.1, Step 4)
 const FALLBACK_PORTS = {
@@ -148,8 +158,187 @@ function parseIdentityTxt(txt) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2)
+// ---------------------------------------------------------------------------
+
 /**
- * Resolve identity metadata from TXT record.
+ * Pad a Base64URL string (no padding) so Node can decode it.
+ * @param {string} s
+ * @returns {string}
+ */
+function padB64Url(s) {
+  return s + '='.repeat((4 - (s.length % 4)) % 4);
+}
+
+/**
+ * Parse a `k=v;k=v` segment (after the `did:dns:` prefix) into an object.
+ * @param {string} text
+ * @returns {Object<string,string>}
+ */
+function parseDidDnsKv(text) {
+  const out = {};
+  for (const pair of text.split(';')) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    const k = pair.substring(0, eq).trim();
+    const v = pair.substring(eq + 1).trim();
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Verified did:dns identity (declaration + public key, optional blacklist).
+ *
+ * Returned only when declaration+pk records are both present. The fingerprint
+ * chain (fp == Base64URL(SHA-256(pk)[0:12])) is checked by `fingerprintChainOk()`;
+ * the caller decides trust policy via `isValid()` (fail-closed default).
+ */
+class DidDnsIdentity {
+  constructor(opts = {}) {
+    this.version = opts.version ?? 1;
+    this.fingerprint = opts.fingerprint ?? '';
+    this.nickname = opts.nickname ?? null;        // Base64URL(UTF-8)
+    this.gender = opts.gender ?? null;            // M/F/O/X
+    this.issuedAt = opts.issuedAt ?? null;
+    this.expiresAt = opts.expiresAt ?? null;
+    this.keyType = opts.keyType ?? DID_DNS_KTY_ED25519;
+    this.publicKeyB64Url = opts.publicKeyB64Url ?? '';
+    this.blacklist = opts.blacklist ?? [];
+    this.rawDeclaration = opts.rawDeclaration ?? '';
+    this.rawPublicKey = opts.rawPublicKey ?? '';
+  }
+
+  /** Full public-key bytes (decoded from Base64URL). */
+  get publicKeyBytes() {
+    return Buffer.from(padB64Url(this.publicKeyB64Url), 'base64url');
+  }
+
+  /** Recompute fp = Base64URL(SHA-256(pk)[0:12]) over the public key. */
+  computeFingerprint() {
+    const digest = crypto.createHash('sha256').update(this.publicKeyBytes).digest();
+    return digest.subarray(0, DID_DNS_FINGERPRINT_BYTES).toString('base64url');
+  }
+
+  /** True iff declared fp matches recomputed fp over the pk bytes. */
+  fingerprintChainOk() {
+    return !!this.fingerprint && this.fingerprint === this.computeFingerprint();
+  }
+
+  isRevoked() {
+    return this.blacklist.includes(this.fingerprint);
+  }
+
+  isExpired(now) {
+    if (this.expiresAt == null) return false;
+    return (now ?? Math.floor(Date.now() / 1000)) >= this.expiresAt;
+  }
+
+  isStale(now) {
+    if (this.issuedAt == null) return false;
+    return Math.abs((now ?? Math.floor(Date.now() / 1000)) - this.issuedAt) > DID_DNS_FRESHNESS_WINDOW;
+  }
+
+  /** Composite policy: version 1 + ed25519 + chain holds + not revoked + not expired. */
+  isValid(now) {
+    return (
+      this.version === 1 &&
+      this.keyType === DID_DNS_KTY_ED25519 &&
+      this.fingerprintChainOk() &&
+      !this.isRevoked() &&
+      !this.isExpired(now)
+    );
+  }
+
+  /** Decode the Base64URL(UTF-8) nickname, or null. */
+  nicknameDecoded() {
+    if (!this.nickname) return null;
+    try {
+      return Buffer.from(padB64Url(this.nickname), 'base64url').toString('utf-8');
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Classify TXT records by did:dns: sub-type and assemble an identity.
+ *
+ * @param {string[]|string|null} txtRecords
+ * @returns {DidDnsIdentity|null}
+ *   null if no did:dns records are found, or if declaration/pk is missing.
+ */
+function parseDidDnsIdentity(txtRecords) {
+  if (txtRecords == null) return null;
+  if (typeof txtRecords === 'string' || Buffer.isBuffer(txtRecords)) {
+    txtRecords = [txtRecords];
+  }
+
+  let declRaw = null, pkRaw = null, blackRaw = null;
+  for (let txt of txtRecords) {
+    if (Buffer.isBuffer(txt)) txt = txt.toString('utf-8');
+    if (typeof txt !== 'string') continue;
+    const s = txt.trim();
+    if (s.startsWith(DID_DNS_DECL)) {
+      if (declRaw === null) declRaw = s;
+    } else if (s.startsWith(DID_DNS_PK)) {
+      if (pkRaw === null) pkRaw = s;
+    } else if (s.startsWith(DID_DNS_BLACK)) {
+      if (blackRaw === null) blackRaw = s;
+    }
+  }
+
+  if (declRaw == null || pkRaw == null) return null;
+
+  const decl = parseDidDnsKv(declRaw.substring(DID_DNS_PREFIX.length));
+  const pk = parseDidDnsKv(pkRaw.substring(DID_DNS_PREFIX.length));
+
+  const parseIntOrNull = (v) => (/^-?\d+$/.test(v ?? '') ? parseInt(v, 10) : null);
+
+  const identity = new DidDnsIdentity({
+    version: parseInt(decl.v ?? '1', 10),
+    fingerprint: decl.fp ?? '',
+    nickname: decl.n || null,
+    gender: decl.g || null,
+    issuedAt: parseIntOrNull(decl.iat),
+    expiresAt: parseIntOrNull(decl.exp),
+    keyType: pk.kty ?? DID_DNS_KTY_ED25519,
+    publicKeyB64Url: pk.pk ?? '',
+    rawDeclaration: declRaw,
+    rawPublicKey: pkRaw,
+  });
+
+  if (blackRaw != null) {
+    const fpField = parseDidDnsKv(blackRaw.substring(DID_DNS_PREFIX.length)).fp ?? '';
+    identity.blacklist = fpField.split(',').filter(f => f.length > 0);
+  }
+
+  return identity;
+}
+
+/**
+ * Resolve and verify a did:dns identity for `domain` via TXT query.
+ *
+ * Returns null on NXDOMAIN / no TXT / no did:dns: records (fail-closed —
+ * caller proceeds with a null identity).
+ *
+ * @param {string} domain
+ * @returns {Promise<DidDnsIdentity|null>}
+ */
+async function resolveIdentityDidDns(domain) {
+  let txtRecords;
+  try {
+    txtRecords = await dns.resolveTxt(domain);
+  } catch (err) {
+    return null;
+  }
+  const flat = txtRecords.map(r => Array.isArray(r) ? r.join('') : r);
+  return parseDidDnsIdentity(flat);
+}
+
+/**
+ * Resolve legacy identity metadata from a TXT record (id=;key=;nick=;ipfs=).
  *
  * @param {string} domain
  * @returns {Promise<object|null>}
@@ -208,10 +397,15 @@ async function resolve_kirin_dns(domain) {
 // Exports
 // ---------------------------------------------------------------------------
 module.exports = {
-  // Primary API
+  // Primary API (v2 SRV + legacy TXT-JSON identity)
   resolveService,
   resolveAllServices,
   resolveIdentity,
+  // did:dns three-record identity model (C-1 baseline)
+  DidDnsIdentity,
+  parseDidDnsIdentity,
+  resolveIdentityDidDns,
+  padB64Url,
   // Legacy wrapper
   resolve_kirin_dns,
   // Utilities
@@ -219,6 +413,8 @@ module.exports = {
   // Constants
   SRV_SERVICES,
   FALLBACK_PORTS,
+  DID_DNS_PREFIX,
+  DID_DNS_KTY_ED25519,
 };
 
 // ---------------------------------------------------------------------------
@@ -263,6 +459,46 @@ if (require.main === module) {
     console.assert(full.identity === null, 'legacy identity null');
     console.log('Legacy wrapper test: PASSED');
 
+    // ---- did:dns three-record model self-test (C-1 baseline) ----
+    const { parseDidDnsIdentity } = module.exports;
+    const pkBytes = Buffer.from(Array.from({ length: 32 }, (_, i) => i));
+    const pkB64 = pkBytes.toString('base64url');
+    const fpCalc = crypto.createHash('sha256').update(pkBytes).digest().subarray(0, 12).toString('base64url');
+    const ts = Math.floor(Date.now() / 1000);
+
+    const recs = [
+      'v=spf1 include:_spf.kirinnet.org -all',
+      `did:dns:v=1;fp=${fpCalc};n=QWxpY2U;g=F;iat=${ts};exp=${ts + 3600}`,
+      `did:dns:pk;kty=ed25519;pk=${pkB64}`,
+      'did:dns:black;fp=RevokedAaaa,RevokedBbbb',
+    ];
+    const didId = parseDidDnsIdentity(recs);
+    console.assert(didId !== null, 'did:dns identity parsed');
+    console.assert(didId.version === 1, 'did:dns version');
+    console.assert(didId.fingerprint === fpCalc, 'did:dns fp');
+    console.assert(didId.keyType === 'ed25519', 'did:dns kty');
+    console.assert(didId.fingerprintChainOk() === true, 'did:dns fingerprint chain');
+    console.assert(didId.isValid(ts) === true, 'did:dns valid');
+    console.assert(didId.nicknameDecoded() === 'Alice', 'did:dns nickname decode');
+    console.assert(didId.blacklist.length === 2, 'did:dns blacklist size');
+    console.assert(didId.isRevoked() === false, 'did:dns not revoked');
+
+    // Tampered pk -> chain breaks
+    const tampered = [...recs];
+    tampered[2] = `did:dns:pk;kty=ed25519;pk=${Buffer.alloc(32, 255).toString('base64url')}`;
+    const broken = parseDidDnsIdentity(tampered);
+    console.assert(broken.fingerprintChainOk() === false, 'tampered pk breaks chain');
+
+    // Missing pk -> null
+    console.assert(parseDidDnsIdentity([recs[1]]) === null, 'missing pk -> null');
+    // No did:dns -> null
+    console.assert(parseDidDnsIdentity(['v=spf1 -all', 'id=foo;key=bar']) === null, 'no did:dns -> null');
+    // Wrong kty -> invalid
+    const rsaRecs = [recs[1], `did:dns:pk;kty=rsa;pk=${pkB64}`];
+    const rsaId = parseDidDnsIdentity(rsaRecs);
+    console.assert(rsaId.keyType === 'rsa' && rsaId.isValid(ts) === false, 'rsa kty rejected');
+
+    console.log('\ndid:dns identity self-test: PASSED');
     console.log('\nAll KirinDNS tests passed.');
   })();
 }

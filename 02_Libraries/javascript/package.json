@@ -8,7 +8,13 @@
     "kirin_dns.js",
     "kirin_dns.d.ts"
   ],
-  "keywords": ["dns", "adrp", "kirindns", "port-discovery", "web3"],
+  "keywords": [
+    "dns",
+    "adrp",
+    "kirindns",
+    "port-discovery",
+    "web3"
+  ],
   "author": "kirin-yucall <kirin.yucall@gmail.com>",
   "license": "Apache-2.0",
   "repository": {
@@ -21,5 +27,8 @@
   "homepage": "https://github.com/kirin-yucall/KirinNet",
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
   }
 }

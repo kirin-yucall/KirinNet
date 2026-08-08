@@ -349,6 +349,237 @@ Future<KirinIdentity?> resolveIdentity(String domain) async {
 }
 
 // ---------------------------------------------------------------------------
+// did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2)
+// ---------------------------------------------------------------------------
+//
+// Tamper-evident fingerprint chain: fp == Base64URL(SHA-256(pk)[0:12]).
+// SHA-256 is implemented inline (FIPS 180-4) to avoid a pub dependency
+// (`package:crypto`), keeping this a pure-Dart single-file library.
+
+const _didDnsPrefix = 'did:dns:';
+const _didDnsDeclPrefix = 'did:dns:v=';
+const _didDnsPkPrefix = 'did:dns:pk;';
+const _didDnsBlackPrefix = 'did:dns:black;';
+const _didDnsKtyEd25519 = 'ed25519';
+const _didDnsFingerprintBytes = 12; // -> 16 base64url chars
+
+/// Verified did:dns identity (declaration + public key, optional blacklist).
+class DidDnsIdentity {
+  int version = 1;
+  String fingerprint = '';
+  String nickname = '';        // Base64URL(UTF-8)
+  String gender = '';          // M/F/O/X
+  int issuedAt = 0;
+  int expiresAt = 0;
+  String keyType = _didDnsKtyEd25519;
+  String publicKeyB64Url = '';
+  List<String> blacklist = [];
+
+  /// Recompute fp = Base64URL(SHA-256(pk)[0:12]). Empty on malformed pk.
+  String computeFingerprint() {
+    final pk = _base64urlDecode(publicKeyB64Url);
+    if (pk == null || pk.isEmpty) return '';
+    final digest = _sha256(pk);
+    return _base64urlEncode(digest.sublist(0, _didDnsFingerprintBytes));
+  }
+
+  /// True iff declared fp matches recomputed fp over the pk bytes.
+  bool fingerprintChainOk() =>
+      fingerprint.isNotEmpty && fingerprint == computeFingerprint();
+  bool isRevoked() => blacklist.contains(fingerprint);
+  bool isExpired(int now) => expiresAt != 0 && now >= expiresAt;
+  /// Composite policy: v1 + ed25519 + chain + not revoked + not expired.
+  bool isValid(int now) =>
+      version == 1 &&
+      keyType == _didDnsKtyEd25519 &&
+      fingerprintChainOk() &&
+      !isRevoked() &&
+      !isExpired(now);
+
+  /// Decode the Base64URL(UTF-8) nickname, or null if absent/invalid.
+  String? nicknameDecoded() {
+    if (nickname.isEmpty) return null;
+    final bytes = _base64urlDecode(nickname);
+    if (bytes == null) return null;
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+}
+
+// ---- pure-Dart SHA-256 (FIPS 180-4) ------------------------------------
+final _sha256K = [
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,
+  0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,
+  0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,
+  0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,
+  0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,
+  0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,
+  0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,
+  0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,
+  0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+];
+const _mask32 = 0xFFFFFFFF;
+
+List<int> _sha256(List<int> data) {
+  int rotl(int x, int n) => ((x << n) | (x >> (32 - n))) & _mask32;
+  int rotr(int x, int n) => (x >> n) | ((x << (32 - n)) & _mask32);
+  final bytes = List<int>.from(data);
+  final bitLen = bytes.length * 8;
+  bytes.add(0x80);
+  while (bytes.length % 64 != 56) bytes.add(0);
+  for (int i = 7; i >= 0; i--) bytes.add((bitLen >> (i * 8)) & 0xff);
+  var h = [
+    0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+    0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+  ];
+  for (int off = 0; off < bytes.length; off += 64) {
+    final m = List<int>.filled(64, 0);
+    for (int i = 0; i < 16; i++) {
+      m[i] = ((bytes[off + i * 4] << 24) |
+              (bytes[off + i * 4 + 1] << 16) |
+              (bytes[off + i * 4 + 2] << 8) |
+              bytes[off + i * 4 + 3]) &
+          _mask32;
+    }
+    for (int i = 16; i < 64; i++) {
+      final s0 = rotr(m[i - 15], 7) ^ rotr(m[i - 15], 18) ^ (m[i - 15] >> 3);
+      final s1 = rotr(m[i - 2], 17) ^ rotr(m[i - 2], 19) ^ (m[i - 2] >> 10);
+      m[i] = (m[i - 16] + s0 + m[i - 7] + s1) & _mask32;
+    }
+    var a = h[0], b = h[1], c = h[2], d = h[3];
+    var e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (int i = 0; i < 64; i++) {
+      final s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      final ch = (e & f) ^ ((~e & _mask32) & g);
+      final t1 = (hh + s1 + ch + _sha256K[i] + m[i]) & _mask32;
+      final s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      final maj = (a & b) ^ (a & c) ^ (b & c);
+      final t2 = (s0 + maj) & _mask32;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) & _mask32;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) & _mask32;
+    }
+    h[0] = (h[0] + a) & _mask32;
+    h[1] = (h[1] + b) & _mask32;
+    h[2] = (h[2] + c) & _mask32;
+    h[3] = (h[3] + d) & _mask32;
+    h[4] = (h[4] + e) & _mask32;
+    h[5] = (h[5] + f) & _mask32;
+    h[6] = (h[6] + g) & _mask32;
+    h[7] = (h[7] + hh) & _mask32;
+  }
+  final out = <int>[];
+  for (int i = 0; i < 8; i++) {
+    out.add((h[i] >> 24) & 0xff);
+    out.add((h[i] >> 16) & 0xff);
+    out.add((h[i] >> 8) & 0xff);
+    out.add(h[i] & 0xff);
+  }
+  return out;
+}
+
+const _b64urlAlphabet =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/// Base64URL encode (RFC 4648 §5, no padding).
+String _base64urlEncode(List<int> bytes) {
+  var val = 0, valb = -6;
+  final out = StringBuffer();
+  for (final b in bytes) {
+    val = ((val << 8) | b) & _mask32;
+    valb += 8;
+    while (valb >= 0) {
+      out.write(_b64urlAlphabet[(val >> valb) & 0x3f]);
+      valb -= 6;
+    }
+  }
+  if (valb > -6) {
+    out.write(_b64urlAlphabet[((val << 8) >> (valb + 8)) & 0x3f]);
+  }
+  return out.toString();
+}
+
+/// Base64URL decode (no padding). Returns null on invalid char.
+List<int>? _base64urlDecode(String s) {
+  final rev = List<int>.filled(256, -1);
+  for (int i = 0; i < 64; i++) {
+    rev[_b64urlAlphabet.codeUnitAt(i)] = i;
+  }
+  var val = 0, valb = -8;
+  final out = <int>[];
+  for (final cu in s.codeUnits) {
+    if (cu == 0x3d) continue; // '='
+    final d = rev[cu];
+    if (d < 0) return null;
+    val = ((val << 6) | d) & _mask32;
+    valb += 6;
+    if (valb >= 0) {
+      out.add((val >> valb) & 0xff);
+      valb -= 8;
+    }
+  }
+  return out;
+}
+
+Map<String, String> _parseDidDnsKv(String segment) {
+  final out = <String, String>{};
+  for (final pair in segment.split(';')) {
+    final eq = pair.indexOf('=');
+    if (eq == -1) continue;
+    final k = pair.substring(0, eq).trim();
+    final v = pair.substring(eq + 1).trim();
+    out[k] = v;
+  }
+  return out;
+}
+
+/// Classify TXT records by did:dns: sub-type; assemble an identity.
+/// Returns null if no did:dns records / declaration+pk missing.
+DidDnsIdentity? parseDidDnsIdentity(List<String> txtRecords) {
+  String? declRaw, pkRaw, blackRaw;
+  for (final raw in txtRecords) {
+    final s = raw.trim();
+    if (declRaw == null && s.startsWith(_didDnsDeclPrefix)) {
+      declRaw = s;
+    } else if (pkRaw == null && s.startsWith(_didDnsPkPrefix)) {
+      pkRaw = s;
+    } else if (blackRaw == null && s.startsWith(_didDnsBlackPrefix)) {
+      blackRaw = s;
+    }
+  }
+  if (declRaw == null || pkRaw == null) return null;
+
+  final decl = _parseDidDnsKv(declRaw.substring(_didDnsPrefix.length));
+  final pk = _parseDidDnsKv(pkRaw.substring(_didDnsPrefix.length));
+
+  final id = DidDnsIdentity()
+    ..version = int.tryParse(decl['v'] ?? '1') ?? 1
+    ..fingerprint = decl['fp'] ?? ''
+    ..nickname = decl['n'] ?? ''
+    ..gender = decl['g'] ?? ''
+    ..issuedAt = int.tryParse(decl['iat'] ?? '0') ?? 0
+    ..expiresAt = int.tryParse(decl['exp'] ?? '0') ?? 0
+    ..keyType = pk['kty'] ?? _didDnsKtyEd25519
+    ..publicKeyB64Url = pk['pk'] ?? '';
+
+  if (blackRaw != null) {
+    final bkv = _parseDidDnsKv(blackRaw.substring(_didDnsPrefix.length));
+    final fpField = bkv['fp'] ?? '';
+    id.blacklist = fpField
+        .split(',')
+        .where((f) => f.isNotEmpty)
+        .toList();
+  }
+  return id;
+}
+
+// ---------------------------------------------------------------------------
 // Legacy Compatibility Wrapper
 // ---------------------------------------------------------------------------
 
@@ -405,5 +636,46 @@ Future<void> main() async {
   assert(full['http'] == null, 'legacy http null');
   assert(full['identity'] == null, 'legacy identity null');
 
-  print('KirinDNS Dart self-test: PASSED');
+  // ---- did:dns three-record identity model (C-1 baseline) ----
+  // Deterministic 32-byte key = bytes 0..31 (matches the golden vector).
+  final pkBytes = List<int>.generate(32, (i) => i);
+  final pkB64 = _base64urlEncode(pkBytes);
+  final dg = _sha256(pkBytes);
+  final fpCalc = _base64urlEncode(dg.sublist(0, _didDnsFingerprintBytes));
+  const now = 1700000000;
+
+  final recs = [
+    'v=spf1 include:_spf.kirinnet.org -all',
+    'did:dns:v=1;fp=$fpCalc;n=QWxpY2U;g=F;iat=$now;exp=${now + 3600}',
+    'did:dns:pk;kty=ed25519;pk=$pkB64',
+    'did:dns:black;fp=RevokedAaaa,RevokedBbbb',
+  ];
+  final did = parseDidDnsIdentity(recs)!;
+  assert(did.version == 1, 'did:dns version');
+  assert(did.fingerprint == fpCalc, 'did:dns fp');
+  assert(did.keyType == 'ed25519', 'did:dns kty');
+  assert(did.fingerprintChainOk(), 'did:dns fingerprint chain');
+  assert(did.isValid(now), 'did:dns valid');
+  assert(did.nicknameDecoded() == 'Alice', 'did:dns nickname decode');
+  assert(!did.isRevoked(), 'did:dns not revoked');
+
+  // Tampered pk -> chain breaks
+  final wrong = List<int>.filled(32, 0xff);
+  final wrongB64 = _base64urlEncode(wrong);
+  final tampered = List<String>.from(recs)
+    ..[2] = 'did:dns:pk;kty=ed25519;pk=$wrongB64';
+  final broken = parseDidDnsIdentity(tampered)!;
+  assert(!broken.fingerprintChainOk(), 'tampered pk breaks chain');
+
+  // Missing pk -> null
+  assert(parseDidDnsIdentity([recs[1]]) == null, 'missing pk -> null');
+  // No did:dns -> null (legacy id= ignored)
+  assert(parseDidDnsIdentity(['v=spf1 -all', 'id=foo;key=bar']) == null,
+      'no did:dns -> null');
+  // Wrong kty -> invalid
+  final rsaId =
+      parseDidDnsIdentity([recs[1], 'did:dns:pk;kty=rsa;pk=$pkB64'])!;
+  assert(rsaId.keyType == 'rsa' && !rsaId.isValid(now), 'rsa kty rejected');
+
+  print('KirinDNS Dart self-test: PASSED (incl. did:dns fingerprint chain)');
 }

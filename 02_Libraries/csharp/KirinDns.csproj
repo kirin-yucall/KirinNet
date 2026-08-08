@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>KirinNet</RootNamespace>
+    <AssemblyName>KirinDns</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- The .cs ships its own self-test Main(); no test runner dependency. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="KirinDns.cs" />
+  </ItemGroup>
+
+</Project>

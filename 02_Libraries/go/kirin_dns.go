@@ -16,6 +16,8 @@ package kirindns
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net"
 	"strings"
@@ -38,6 +40,209 @@ type Identity struct {
 	Key  string
 	Nick string // optional
 	IPFS bool   // optional, defaults to false
+}
+
+// ---------------------------------------------------------------------------
+// did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2)
+// ---------------------------------------------------------------------------
+
+// DidDnsIdentity holds a parsed did:dns identity (declaration + public key,
+// optional blacklist). Trust policy is applied by the caller via IsValid
+// (fail-closed default): version 1 + ed25519 + fingerprint chain + not revoked
+// + not expired.
+type DidDnsIdentity struct {
+	Version       int
+	Fingerprint   string
+	Nickname      string // Base64URL(UTF-8), may be empty
+	Gender        string // M/F/O/X, may be empty
+	IssuedAt      int64  // Unix seconds, 0 if absent
+	ExpiresAt     int64
+	KeyType       string
+	PublicKeyB64  string
+	Blacklist     []string
+	RawDeclaration string
+	RawPublicKey   string
+}
+
+const (
+	didDnsPrefix       = "did:dns:"
+	didDnsDeclPrefix   = "did:dns:v="
+	didDnsPkPrefix     = "did:dns:pk;"
+	didDnsBlackPrefix  = "did:dns:black;"
+	didDnsKtyEd25519   = "ed25519"
+	didDnsFingerprintBytes = 12
+	didDnsFreshnessWindow  = 5 * 60 // ±5 minutes (spec §3.2.1)
+)
+
+// PublicKeyBytes decodes the Base64URL public key.
+func (d *DidDnsIdentity) PublicKeyBytes() ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(d.PublicKeyB64)
+}
+
+// ComputeFingerprint recomputes fp = Base64URL(SHA-256(pk)[0:12]).
+func (d *DidDnsIdentity) ComputeFingerprint() (string, error) {
+	pk, err := d.PublicKeyBytes()
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(pk)
+	return base64.RawURLEncoding.EncodeToString(digest[:didDnsFingerprintBytes]), nil
+}
+
+// FingerprintChainOk reports whether the declared fp matches the recomputed fp.
+func (d *DidDnsIdentity) FingerprintChainOk() bool {
+	if d.Fingerprint == "" {
+		return false
+	}
+	got, err := d.ComputeFingerprint()
+	return err == nil && got == d.Fingerprint
+}
+
+// IsRevoked reports whether the declaration fingerprint appears in the blacklist.
+func (d *DidDnsIdentity) IsRevoked() bool {
+	for _, f := range d.Blacklist {
+		if f == d.Fingerprint {
+			return true
+		}
+	}
+	return false
+}
+
+// IsExpired reports whether exp <= now (0 ExpiresAt means no expiry check).
+func (d *DidDnsIdentity) IsExpired(now int64) bool {
+	if d.ExpiresAt == 0 {
+		return false
+	}
+	return now >= d.ExpiresAt
+}
+
+// IsStale reports whether iat is outside ±5min of now.
+func (d *DidDnsIdentity) IsStale(now int64) bool {
+	if d.IssuedAt == 0 {
+		return false
+	}
+	diff := now - d.IssuedAt
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff > didDnsFreshnessWindow
+}
+
+// IsValid is the composite policy check (fail-closed).
+func (d *DidDnsIdentity) IsValid(now int64) bool {
+	return d.Version == 1 &&
+		d.KeyType == didDnsKtyEd25519 &&
+		d.FingerprintChainOk() &&
+		!d.IsRevoked() &&
+		!d.IsExpired(now)
+}
+
+// NicknameDecoded decodes the Base64URL(UTF-8) nickname, or "" if absent/invalid.
+func (d *DidDnsIdentity) NicknameDecoded() string {
+	if d.Nickname == "" {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(d.Nickname)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// ParseDidDnsIdentity classifies TXT records by did:dns: sub-type and assembles
+// an identity. Returns nil if no did:dns records or declaration+pk are missing.
+// Pure function (no network) — usable for tests.
+func ParseDidDnsIdentity(txtRecords []string) *DidDnsIdentity {
+	var declRaw, pkRaw, blackRaw string
+	for _, raw := range txtRecords {
+		s := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(s, didDnsDeclPrefix) && declRaw == "":
+			declRaw = s
+		case strings.HasPrefix(s, didDnsPkPrefix) && pkRaw == "":
+			pkRaw = s
+		case strings.HasPrefix(s, didDnsBlackPrefix) && blackRaw == "":
+			blackRaw = s
+		}
+	}
+	if declRaw == "" || pkRaw == "" {
+		return nil
+	}
+
+	decl := parseDidDnsKv(strings.TrimPrefix(declRaw, didDnsPrefix))
+	pk := parseDidDnsKv(strings.TrimPrefix(pkRaw, didDnsPrefix))
+
+	id := &DidDnsIdentity{
+		Version:        didDnsAtoi(decl["v"], 1),
+		Fingerprint:    decl["fp"],
+		Nickname:       decl["n"],
+		Gender:         decl["g"],
+		KeyType:        pk["kty"],
+		PublicKeyB64:   pk["pk"],
+		RawDeclaration: declRaw,
+		RawPublicKey:   pkRaw,
+	}
+	if pk["kty"] == "" {
+		id.KeyType = didDnsKtyEd25519
+	}
+	if v, ok := decl["iat"]; ok {
+		id.IssuedAt = didDnsAtoi64(v, 0)
+	}
+	if v, ok := decl["exp"]; ok {
+		id.ExpiresAt = didDnsAtoi64(v, 0)
+	}
+
+	if blackRaw != "" {
+		black := parseDidDnsKv(strings.TrimPrefix(blackRaw, didDnsPrefix))
+		for _, f := range strings.Split(black["fp"], ",") {
+			if f != "" {
+				id.Blacklist = append(id.Blacklist, f)
+			}
+		}
+	}
+	return id
+}
+
+func parseDidDnsKv(text string) map[string]string {
+	out := map[string]string{}
+	for _, pair := range strings.Split(text, ";") {
+		eq := strings.Index(pair, "=")
+		if eq < 0 {
+			continue
+		}
+		out[strings.TrimSpace(pair[:eq])] = strings.TrimSpace(pair[eq+1:])
+	}
+	return out
+}
+
+func didDnsAtoi(s string, def int) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return def
+		}
+		n = n*10 + int(c-'0')
+	}
+	if s == "" {
+		return def
+	}
+	return n
+}
+
+func didDnsAtoi64(s string, def int64) int64 {
+	var n int64
+	seen := false
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return def
+		}
+		n = n*10 + int64(c-'0')
+		seen = true
+	}
+	if !seen {
+		return def
+	}
+	return n
 }
 
 // FullResolution is the legacy wrapper result containing all services + identity.
@@ -178,7 +383,25 @@ func ResolveService(domain, service string) (*SRVResult, error) {
 		return nil, nil
 	}
 
-	// RFC 2782: lowest priority, then highest weight
+	return selectBestSrv(addrs), nil
+}
+
+// srvLike is the subset of net.SRV used by the selection algorithm; tests can
+// construct these directly to cover RFC 2782 priority/weight selection without
+// hitting the network.
+type srvLike struct {
+	Target   string
+	Port     uint16
+	Priority uint16
+	Weight   uint16
+}
+
+// selectBestSrv applies RFC 2782 selection (lowest priority, then highest
+// weight) and returns the chosen record as an *SRVResult. Exposed for tests.
+func selectBestSrv(addrs []*net.SRV) *SRVResult {
+	if len(addrs) == 0 {
+		return nil
+	}
 	best := addrs[0]
 	for _, a := range addrs[1:] {
 		if a.Priority < best.Priority {
@@ -187,9 +410,8 @@ func ResolveService(domain, service string) (*SRVResult, error) {
 			best = a
 		}
 	}
-
 	target := strings.TrimSuffix(best.Target, ".")
-	return &SRVResult{Target: target, Port: best.Port}, nil
+	return &SRVResult{Target: target, Port: best.Port}
 }
 
 // ResolveAllServices resolves all SRV services for a domain.
@@ -267,6 +489,19 @@ func ResolveIdentity(domain string) (*Identity, error) {
 		}
 	}
 	return nil, nil
+}
+
+// ResolveIdentityDidDns resolves and assembles a did:dns identity for domain.
+// Returns nil, nil on NXDOMAIN / no TXT / no did:dns records (fail-closed).
+func ResolveIdentityDidDns(domain string) (*DidDnsIdentity, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	txts, err := net.DefaultResolver.LookupTXT(ctx, domain)
+	if err != nil {
+		return nil, nil
+	}
+	return ParseDidDnsIdentity(txts), nil
 }
 
 // ---------------------------------------------------------------------------

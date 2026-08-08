@@ -146,6 +146,155 @@ function resolveIdentity(string $domain): ?array
 }
 
 // ---------------------------------------------------------------------------
+// did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2)
+// ---------------------------------------------------------------------------
+//
+// Tamper-evident fingerprint chain: fp == Base64URL(SHA-256(pk)[0:12]).
+// Uses PHP's built-in hash() (SHA-256) and a base64url wrapper.
+
+const DID_DNS_PREFIX       = 'did:dns:';
+const DID_DNS_DECL_PREFIX  = 'did:dns:v=';
+const DID_DNS_PK_PREFIX    = 'did:dns:pk;';
+const DID_DNS_BLACK_PREFIX = 'did:dns:black;';
+const DID_DNS_KTY_ED25519  = 'ed25519';
+const DID_DNS_FINGERPRINT_BYTES = 12;  // -> 16 base64url chars
+
+/** Base64URL encode (RFC 4648 §5, no padding). */
+function base64urlEncode(string $binary): string
+{
+    return rtrim(strtr(base64_encode($binary), '+/', '-_'), '=');
+}
+
+/** Base64URL decode (no padding). Returns the raw binary, or null on error. */
+function base64urlDecode(string $s): ?string
+{
+    $pad = strlen($s) % 4;
+    if ($pad > 0) {
+        $s .= str_repeat('=', 4 - $pad);
+    }
+    $decoded = base64_decode(strtr($s, '-_', '+/'), true);
+    return $decoded === false ? null : $decoded;
+}
+
+/**
+ * A parsed did:dns identity (declaration + public key, optional blacklist).
+ * Returned as an associative array; the tamper-evident fingerprint chain is
+ * checked by fingerprintChainOk(), and the caller applies trust policy via
+ * isValid() (fail-closed default).
+ */
+function newDidDnsIdentity(): array
+{
+    return [
+        'version'          => 1,
+        'fingerprint'      => '',
+        'nickname'         => '',      // Base64URL(UTF-8)
+        'gender'           => '',      // M/F/O/X
+        'issued_at'        => 0,
+        'expires_at'       => 0,
+        'key_type'         => DID_DNS_KTY_ED25519,
+        'public_key_b64url'=> '',
+        'blacklist'        => [],
+    ];
+}
+
+/** Recompute fp = Base64URL(SHA-256(pk)[0:12]). Empty string on malformed pk. */
+function computeFingerprint(array $id): string
+{
+    $pk = base64urlDecode($id['public_key_b64url'] ?? '');
+    if ($pk === null || $pk === '') {
+        return '';
+    }
+    $digest = hash('sha256', $pk, binary: true);
+    return base64urlEncode(substr($digest, 0, DID_DNS_FINGERPRINT_BYTES));
+}
+
+/** True iff declared fp matches recomputed fp over the pk bytes. */
+function fingerprintChainOk(array $id): bool
+{
+    return $id['fingerprint'] !== '' && $id['fingerprint'] === computeFingerprint($id);
+}
+
+function isRevoked(array $id): bool
+{
+    return in_array($id['fingerprint'], $id['blacklist'], true);
+}
+
+function isExpired(array $id, int $now): bool
+{
+    return $id['expires_at'] !== 0 && $now >= $id['expires_at'];
+}
+
+/** Composite policy: v1 + ed25519 + chain + not revoked + not expired. */
+function isValid(array $id, int $now): bool
+{
+    return $id['version'] === 1
+        && $id['key_type'] === DID_DNS_KTY_ED25519
+        && fingerprintChainOk($id)
+        && !isRevoked($id)
+        && !isExpired($id, $now);
+}
+
+/** Parse a `k=v;k=v` segment (after the did:dns: prefix) into an assoc array. */
+function parseDidDnsKv(string $segment): array
+{
+    $out = [];
+    foreach (explode(';', $segment) as $pair) {
+        $eq = strpos($pair, '=');
+        if ($eq === false) {
+            continue;
+        }
+        $k = trim(substr($pair, 0, $eq));
+        $v = trim(substr($pair, $eq + 1));
+        $out[$k] = $v;
+    }
+    return $out;
+}
+
+/**
+ * Classify TXT records by did:dns: sub-type; assemble an identity.
+ *
+ * @param array<int,string> $txtRecords
+ * @return array|null  null if no did:dns records / declaration+pk missing.
+ */
+function parseDidDnsIdentity(array $txtRecords): ?array
+{
+    $declRaw = $pkRaw = $blackRaw = null;
+    foreach ($txtRecords as $raw) {
+        $s = trim((string) $raw);
+        if ($declRaw === null && str_starts_with($s, DID_DNS_DECL_PREFIX)) {
+            $declRaw = $s;
+        } elseif ($pkRaw === null && str_starts_with($s, DID_DNS_PK_PREFIX)) {
+            $pkRaw = $s;
+        } elseif ($blackRaw === null && str_starts_with($s, DID_DNS_BLACK_PREFIX)) {
+            $blackRaw = $s;
+        }
+    }
+    if ($declRaw === null || $pkRaw === null) {
+        return null;
+    }
+
+    $decl = parseDidDnsKv(substr($declRaw, strlen(DID_DNS_PREFIX)));
+    $pk   = parseDidDnsKv(substr($pkRaw, strlen(DID_DNS_PREFIX)));
+
+    $id = newDidDnsIdentity();
+    $id['version']           = isset($decl['v']) ? (int)$decl['v'] : 1;
+    $id['fingerprint']       = $decl['fp'] ?? '';
+    $id['nickname']          = $decl['n'] ?? '';
+    $id['gender']            = $decl['g'] ?? '';
+    $id['issued_at']         = isset($decl['iat']) ? (int)$decl['iat'] : 0;
+    $id['expires_at']        = isset($decl['exp']) ? (int)$decl['exp'] : 0;
+    $id['key_type']          = $pk['kty'] ?? DID_DNS_KTY_ED25519;
+    $id['public_key_b64url'] = $pk['pk'] ?? '';
+
+    if ($blackRaw !== null) {
+        $bkv = parseDidDnsKv(substr($blackRaw, strlen(DID_DNS_PREFIX)));
+        $fpField = $bkv['fp'] ?? '';
+        $id['blacklist'] = array_values(array_filter(explode(',', $fpField), fn ($f) => $f !== ''));
+    }
+    return $id;
+}
+
+// ---------------------------------------------------------------------------
 // Legacy Compatibility Wrapper
 // ---------------------------------------------------------------------------
 
@@ -205,4 +354,43 @@ if (basename(__FILE__) === basename($_SERVER['SCRIPT_FILENAME'] ?? '')) {
     assert($full['identity'] === null, 'legacy identity null');
 
     echo "KirinDNS PHP self-test: PASSED\n";
+
+    // ---- did:dns three-record identity model (C-1 baseline) ----
+    // Deterministic 32-byte key = bytes 0..31 (matches the golden vector).
+    $pkBytes = pack('C*', ...range(0, 31));
+    $pkB64 = base64urlEncode($pkBytes);
+    $dg = hash('sha256', $pkBytes, binary: true);
+    $fpCalc = base64urlEncode(substr($dg, 0, DID_DNS_FINGERPRINT_BYTES));
+    $now = 1700000000;
+
+    $recs = [
+        'v=spf1 include:_spf.kirinnet.org -all',
+        "did:dns:v=1;fp={$fpCalc};n=QWxpY2U;g=F;iat={$now};exp=" . ($now + 3600),
+        "did:dns:pk;kty=ed25519;pk={$pkB64}",
+        'did:dns:black;fp=RevokedAaaa,RevokedBbbb',
+    ];
+    $did = parseDidDnsIdentity($recs);
+    assert($did !== null, 'did:dns identity parsed');
+    assert($did['version'] === 1, 'did:dns version');
+    assert($did['fingerprint'] === $fpCalc, 'did:dns fp');
+    assert($did['key_type'] === 'ed25519', 'did:dns kty');
+    assert(fingerprintChainOk($did), 'did:dns fingerprint chain');
+    assert(isValid($did, $now), 'did:dns valid');
+    assert(!isRevoked($did), 'did:dns not revoked');
+
+    // Tampered pk -> chain breaks
+    $wrongB64 = base64urlEncode(str_repeat("\xff", 32));
+    $tampered = [$recs[0], $recs[1], "did:dns:pk;kty=ed25519;pk={$wrongB64}"];
+    $broken = parseDidDnsIdentity($tampered);
+    assert(!fingerprintChainOk($broken), 'tampered pk breaks chain');
+
+    // Missing pk -> null
+    assert(parseDidDnsIdentity([$recs[1]]) === null, 'missing pk -> null');
+    // No did:dns -> null (legacy id= ignored)
+    assert(parseDidDnsIdentity(['v=spf1 -all', 'id=foo;key=bar']) === null, 'no did:dns -> null');
+    // Wrong kty -> invalid
+    $rsaId = parseDidDnsIdentity([$recs[1], "did:dns:pk;kty=rsa;pk={$pkB64}"]);
+    assert($rsaId['key_type'] === 'rsa' && !isValid($rsaId, $now), 'rsa kty rejected');
+
+    echo "KirinDNS PHP did:dns self-test: PASSED (fingerprint chain)\n";
 }

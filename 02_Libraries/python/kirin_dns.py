@@ -1,30 +1,48 @@
 """
 KirinDNS Resolution Protocol (ADRP) v2.0 -- Python Client Library
 
-Implements ADRP as defined in 01_Standard/spec_v1.md.
+Implements ADRP as defined in 01_Standard/spec_v1.md and the did:dns three-record
+identity model in 01_Standard/did-dns-protocol.md §2 (C-1 baseline, 2026-08-08).
 
 Architecture:
   SRV records for service port discovery (_kirinnet-http._tcp, etc.)
-  TXT records for identity metadata (id=;key=;nick=;ipfs=)
+  TXT records for identity metadata in did:dns three-record form:
+      did:dns:v=1;fp=<fp>;n=<nick>;g=<gender>;iat=<ts>;exp=<ts>   (declaration)
+      did:dns:pk;kty=ed25519;pk=<pubkey-base64url>                 (public key)
+      did:dns:black;fp=<fp1>,<fp2>,...                             (blacklist, optional)
+  The tamper-evident fingerprint chain binds the declaration to the public key:
+      fp == Base64URL(SHA-256(pk_bytes)[0:12])
 
 Dependencies: dnspython
     pip install dnspython
 
 Example usage:
-    >>> from kirin_dns import resolve_service, resolve_identity
+    >>> from kirin_dns import resolve_service, resolve_identity_did_dns
     >>> srv = resolve_service("alice.kirinnet.org", "ws")
     >>> print(srv)
     SRVResult(target='alice.kirinnet.org', port=8082)
-    >>> identity = resolve_identity("alice.kirinnet.org")
-    >>> print(identity)
-    {'id': '550e8400-...', 'key': '04abc...', 'nick': 'Alice'}
+    >>> identity = resolve_identity_did_dns("alice.kirinnet.org")
+    >>> print(identity.fingerprint)
+    AbCdEf1234aaaa
 """
 
-from dataclasses import dataclass
-from typing import Dict, Optional
+import base64
+import hashlib
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import dns.resolver
 from dns.exception import DNSException
+
+# did:dns protocol constants (spec §3.2.1 / did-dns-protocol §2)
+_DID_DNS_PREFIX = "did:dns:"
+_DID_DNS_DECL = "did:dns:v="
+_DID_DNS_PK = "did:dns:pk;"
+_DID_DNS_BLACK = "did:dns:black;"
+_DID_DNS_KTY_ED25519 = "ed25519"
+_DID_DNS_FRESHNESS_WINDOW = 5 * 60        # ±5 minutes (spec §3.2.1)
+_DID_DNS_FINGERPRINT_BYTES = 12           # SHA-256[0:12] -> 16 base64url chars
 
 try:  # JSON parsing is only used by the legacy v1 compatibility layer below.
     import json
@@ -58,6 +76,180 @@ class SRVResult:
     """Resolved SRV service target."""
     target: str
     port: int
+
+
+# ---------------------------------------------------------------------------
+# did:dns identity model (spec §3.2.1 / did-dns-protocol §2)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DidDnsIdentity:
+    """Verified did:dns identity (declaration + public key, optional blacklist).
+
+    Returned only when the fingerprint chain holds: the `fingerprint` field of
+    the declaration equals Base64URL(SHA-256(public_key_bytes)[0:12]) and the
+    key type is ed25519. Blacklist / freshness / expiry checks are exposed via
+    `is_valid()` for the caller to apply policy (fail-closed default).
+    """
+    version: int = 1
+    fingerprint: str = ""
+    nickname: Optional[str] = None      # Base64URL(UTF-8), decoded lazily
+    gender: Optional[str] = None        # M/F/O/X
+    issued_at: Optional[int] = None
+    expires_at: Optional[int] = None
+    key_type: str = _DID_DNS_KTY_ED25519
+    public_key_b64url: str = ""
+    blacklist: List[str] = field(default_factory=list)
+    # raw txt records kept for diagnostics / cross-lang parity
+    raw_declaration: str = ""
+    raw_public_key: str = ""
+
+    @property
+    def public_key_bytes(self) -> bytes:
+        return base64.urlsafe_b64decode(_pad_b64url(self.public_key_b64url))
+
+    def compute_fingerprint(self) -> str:
+        """Recompute fp = Base64URL(SHA-256(pk)[0:12]) over the public key."""
+        digest = hashlib.sha256(self.public_key_bytes).digest()
+        return base64.urlsafe_b64encode(digest[:_DID_DNS_FINGERPRINT_BYTES]).decode("ascii")
+
+    def fingerprint_chain_ok(self) -> bool:
+        """True iff declared fp matches recomputed fp over the pk bytes."""
+        return bool(self.fingerprint) and self.fingerprint == self.compute_fingerprint()
+
+    def is_revoked(self) -> bool:
+        """True iff the declaration fingerprint appears in the blacklist."""
+        return self.fingerprint in self.blacklist
+
+    def is_expired(self, now: Optional[int] = None) -> bool:
+        if self.expires_at is None:
+            return False
+        return (now if now is not None else int(time.time())) >= self.expires_at
+
+    def is_stale(self, now: Optional[int] = None) -> bool:
+        """True iff iat is outside ±5min of now (anti-replay)."""
+        if self.issued_at is None:
+            return False
+        return abs((now if now is not None else int(time.time())) - self.issued_at) > _DID_DNS_FRESHNESS_WINDOW
+
+    def is_valid(self, now: Optional[int] = None) -> bool:
+        """Composite policy check: chain holds, ed25519, not revoked, in window."""
+        return (
+            self.version == 1
+            and self.key_type == _DID_DNS_KTY_ED25519
+            and self.fingerprint_chain_ok()
+            and not self.is_revoked()
+            and not self.is_expired(now)
+        )
+
+    def nickname_decoded(self) -> Optional[str]:
+        """Decode the Base64URL(UTF-8) nickname, or None if absent/invalid."""
+        if not self.nickname:
+            return None
+        try:
+            return base64.urlsafe_b64decode(_pad_b64url(self.nickname)).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+
+
+def _pad_b64url(s: str) -> str:
+    """Add the '=' padding that Base64URL strings usually omit."""
+    return s + "=" * (-len(s) % 4)
+
+
+def _parse_kv(text: str) -> Dict[str, str]:
+    """Parse a `k=v;k=v` segment after the did:dns: prefix into a dict."""
+    out: Dict[str, str] = {}
+    for pair in text.split(";"):
+        pair = pair.strip()
+        if "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def parse_did_dns_identity(txt_records) -> Optional[DidDnsIdentity]:
+    """Classify TXT records by did:dns: sub-type and assemble an identity.
+
+    Accepts either a list of raw TXT strings or a single string. Returns None
+    if no did:dns: records are found. Returns a DidDnsIdentity (possibly with
+    a broken fingerprint chain) when declaration+pk records are present; the
+    caller decides via `.is_valid()` whether to trust it (fail-closed).
+    """
+    if txt_records is None:
+        return None
+    if isinstance(txt_records, (str, bytes)):
+        txt_records = [txt_records]
+
+    decl_raw = None
+    pk_raw = None
+    black_raw = None
+
+    for txt in txt_records:
+        if isinstance(txt, (bytes, bytearray)):
+            try:
+                txt = txt.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+        if not isinstance(txt, str):
+            continue
+        s = txt.strip()
+        if s.startswith(_DID_DNS_DECL):
+            if decl_raw is None:
+                decl_raw = s
+        elif s.startswith(_DID_DNS_PK):
+            if pk_raw is None:
+                pk_raw = s
+        elif s.startswith(_DID_DNS_BLACK):
+            if black_raw is None:
+                black_raw = s
+
+    if decl_raw is None or pk_raw is None:
+        return None
+
+    decl = _parse_kv(decl_raw[len(_DID_DNS_PREFIX):])      # strip "did:dns:"
+    pk = _parse_kv(pk_raw[len(_DID_DNS_PREFIX):])
+
+    identity = DidDnsIdentity(
+        version=int(decl.get("v", "1")),
+        fingerprint=decl.get("fp", ""),
+        nickname=decl.get("n") or None,
+        gender=decl.get("g") or None,
+        issued_at=int(decl["iat"]) if decl.get("iat", "").lstrip("-").isdigit() else None,
+        expires_at=int(decl["exp"]) if decl.get("exp", "").lstrip("-").isdigit() else None,
+        key_type=pk.get("kty", _DID_DNS_KTY_ED25519),
+        public_key_b64url=pk.get("pk", ""),
+        raw_declaration=decl_raw,
+        raw_public_key=pk_raw,
+    )
+
+    if black_raw is not None:
+        fp_field = _parse_kv(black_raw[len(_DID_DNS_PREFIX):]).get("fp", "")
+        identity.blacklist = [f for f in fp_field.split(",") if f]
+
+    return identity
+
+
+def resolve_identity_did_dns(domain: str) -> Optional[DidDnsIdentity]:
+    """Resolve and verify a did:dns identity for `domain` via TXT query.
+
+    Returns None on NXDOMAIN / no TXT / no did:dns: records (fail-closed —
+    caller proceeds with a null identity). Returns a DidDnsIdentity when
+    declaration+pk records exist; call `.is_valid()` to decide trust policy.
+    """
+    try:
+        answers = dns.resolver.resolve(domain, "TXT")
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, DNSException):
+        return None
+
+    records = []
+    for rdata in answers:
+        records.append("".join(
+            s.decode("utf-8") if isinstance(s, bytes) else s
+            for s in rdata.strings
+        ))
+    return parse_did_dns_identity(records)
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +466,7 @@ if __name__ == "__main__":
     assert identity is None, f"Expected None, got {identity}"
     print(f"nonexistent.invalid identity: {identity}  (expected None)")
 
-    # Identity parser tests
+    # Legacy identity parser tests
     parsed = parse_identity_txt(
         "id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false"
     )
@@ -293,4 +485,53 @@ if __name__ == "__main__":
     assert parse_identity_txt("") is None
     assert parse_identity_txt("not an identity") is None
 
-    print("KirinDNS Python self-test: PASSED")
+    # ---- did:dns three-record model self-test (C-1 baseline) ----
+    # Real Ed25519 public key (32 bytes) -> compute its fingerprint.
+    pk_bytes = bytes(range(32))
+    pk_b64 = base64.urlsafe_b64encode(pk_bytes).decode("ascii").rstrip("=")
+    fp = base64.urlsafe_b64encode(hashlib.sha256(pk_bytes).digest()[:12]).decode("ascii")
+    now = int(time.time())
+
+    recs = [
+        "v=spf1 include:_spf.kirinnet.org -all",  # SPF — ignored
+        f"did:dns:v=1;fp={fp};n=QWxpY2U;g=F;iat={now};exp={now + 3600}",
+        f"did:dns:pk;kty=ed25519;pk={pk_b64}",
+        f"did:dns:black;fp=RevokedAaaa,RevokedBbbb",
+    ]
+    ident = parse_did_dns_identity(recs)
+    assert ident is not None, "did:dns identity must parse"
+    assert ident.version == 1
+    assert ident.fingerprint == fp
+    assert ident.key_type == "ed25519"
+    assert ident.fingerprint_chain_ok(), "fingerprint chain must hold"
+    assert ident.nickname_decoded() == "Alice"
+    assert ident.gender == "F"
+    assert ident.is_valid(now=now), "fresh ed25519 identity must be valid"
+    assert ident.blacklist == ["RevokedAaaa", "RevokedBbbb"]
+    assert not ident.is_revoked()
+
+    # Tampered pk -> chain breaks
+    tampered = list(recs)
+    tampered[2] = "did:dns:pk;kty=ed25519;pk=" + base64.urlsafe_b64encode(bytes(32)).decode("ascii").rstrip("=")
+    broken = parse_did_dns_identity(tampered)
+    assert broken is not None
+    assert not broken.fingerprint_chain_ok(), "tampered pk must break chain"
+
+    # Revoked -> invalid
+    revoked_recs = [r.replace(f"fp={fp}", f"fp=RevokedAaaa") for r in recs]
+    revoked = parse_did_dns_identity(revoked_recs)
+    assert revoked.is_revoked()
+
+    # Missing pk -> None
+    assert parse_did_dns_identity([recs[1]]) is None
+    # No did:dns at all -> None
+    assert parse_did_dns_identity(["v=spf1 -all", "id=foo;key=bar"]) is None
+    # Wrong kty -> invalid
+    rsa_recs = [
+        recs[1],
+        f"did:dns:pk;kty=rsa;pk={pk_b64}",
+    ]
+    rsa_id = parse_did_dns_identity(rsa_recs)
+    assert rsa_id is not None and rsa_id.key_type == "rsa" and not rsa_id.is_valid(now=now)
+
+    print("KirinDNS Python self-test: PASSED (incl. did:dns fingerprint chain)")

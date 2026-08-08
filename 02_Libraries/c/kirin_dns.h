@@ -64,6 +64,24 @@ typedef struct {
     int  ipfs;       /* 0 or 1, -1 if not set */
 } KirinIdentity;
 
+/* ---- did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2) ---- */
+
+#define KIRIN_DID_DNS_FINGERPRINT_LEN 16   /* Base64URL(SHA-256(pk)[0:12]) -> 16 chars */
+
+typedef struct {
+    unsigned int version;             /* fixed 1 */
+    char   fingerprint[KIRIN_DID_DNS_FINGERPRINT_LEN + 1]; /* declared fp */
+    char   nickname[256];             /* Base64URL(UTF-8), may be empty */
+    char   gender[4];                 /* M/F/O/X, may be empty */
+    long   issued_at;                 /* Unix seconds, 0 if absent */
+    long   expires_at;                /* Unix seconds, 0 if absent */
+    char   key_type[16];              /* must be "ed25519" */
+    char   public_key_b64url[256];    /* Base64URL full public key */
+    char   blacklist[512];            /* comma-separated revoked fingerprints */
+    int    has_decl;                  /* 1 if declaration record was seen */
+    int    has_pk;                    /* 1 if public-key record was seen */
+} KirinDidDnsIdentity;
+
 /* ---- return codes ----------------------------------------------------- */
 
 #define KIRIN_OK              0   /* success (may be fallback ports) */
@@ -118,6 +136,42 @@ int kirin_parse_identity_txt(const char *txt, KirinIdentity *identity);
  * Returns KIRIN_OK on success, KIRIN_ERR_DNS if no identity TXT found.
  */
 int kirin_resolve_identity(const char *domain, KirinIdentity *identity);
+
+/* ---- did:dns three-record identity model (spec §3.2.1) ----------------- */
+
+/*
+ * Classify TXT records by did:dns: sub-type and assemble an identity.
+ *
+ * `txt_records` is an array of NUL-terminated TXT strings; `count` is the
+ * number of strings.  Declaration + public-key records are both required;
+ * blacklist is optional.  Records may appear in any order; non-did:dns
+ * records (SPF/DKIM/legacy id=) are ignored.
+ *
+ * Returns KIRIN_OK and fills `identity` when declaration+pk are present
+ * (call kirin_did_dns_fingerprint_chain_ok() to verify the tamper-evident
+ * chain).  Returns KIRIN_ERR_PARSE if no did:dns records / declaration+pk
+ * missing.  Fingerprint chain validation is a separate, pure function below
+ * so it can be unit-tested without the network.
+ */
+int kirin_parse_did_dns_identity(const char *const *txt_records, int count,
+                                 KirinDidDnsIdentity *identity);
+
+/*
+ * Recompute fp = Base64URL(SHA-256(pk)[0:12]) over the identity's public key
+ * into `out` (buffer must hold at least KIRIN_DID_DNS_FINGERPRINT_LEN+1).
+ * Returns KIRIN_OK on success, KIRIN_ERR_PARSE on a malformed public key.
+ */
+int kirin_did_dns_compute_fingerprint(const KirinDidDnsIdentity *identity,
+                                      char *out);
+
+/* True iff the declared fp equals the recomputed fp over the pk bytes. */
+int kirin_did_dns_fingerprint_chain_ok(const KirinDidDnsIdentity *identity);
+
+/* True iff the declaration fp appears in the blacklist. */
+int kirin_did_dns_is_revoked(const KirinDidDnsIdentity *identity);
+
+/* Composite policy: v1 + ed25519 + chain holds + not revoked + not expired. */
+int kirin_did_dns_is_valid(const KirinDidDnsIdentity *identity, long now);
 
 /* ---- legacy API (backward compatibility) ------------------------------- */
 
