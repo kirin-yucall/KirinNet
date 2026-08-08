@@ -16,6 +16,8 @@
 require 'resolv'
 require 'json'
 require 'set'
+require 'digest'
+require 'base64'
 
 module KirinDNS
   # SRV service names (spec Section 2.2)
@@ -228,6 +230,130 @@ module KirinDNS
     result
   end
 
+  # ---------------------------------------------------------------------------
+  # did:dns three-record identity model (spec §3.2.1 / did-dns-protocol §2)
+  # ---------------------------------------------------------------------------
+  #
+  # Tamper-evident fingerprint chain: fp == Base64URL(SHA-256(pk)[0:12]).
+  # Uses Ruby stdlib Digest::SHA256 + Base64.urlsafe_encode/decode.
+
+  DID_DNS_PREFIX       = 'did:dns:'.freeze
+  DID_DNS_DECL_PREFIX  = 'did:dns:v='.freeze
+  DID_DNS_PK_PREFIX    = 'did:dns:pk;'.freeze
+  DID_DNS_BLACK_PREFIX = 'did:dns:black;'.freeze
+  DID_DNS_KTY_ED25519  = 'ed25519'.freeze
+  DID_DNS_FINGERPRINT_BYTES = 12   # -> 16 base64url chars
+
+  # Base64URL decode (no padding). Returns the raw binary string, or nil.
+  def self.base64url_decode(str)
+    return nil if str.nil? || str.empty?
+    pad = str.length % 4
+    str = str + ('=' * (4 - pad)) if pad > 0
+    Base64.urlsafe_decode64(str)
+  rescue ArgumentError
+    nil
+  end
+
+  # Base64URL encode (no padding).
+  def self.base64url_encode(binary)
+    Base64.urlsafe_encode64(binary, padding: false)
+  end
+
+  # Create a new DidDnsIdentity hash with defaults.
+  def self.new_did_dns_identity
+    {
+      version: 1,
+      fingerprint: '',
+      nickname: '',       # Base64URL(UTF-8)
+      gender: '',         # M/F/O/X
+      issued_at: 0,
+      expires_at: 0,
+      key_type: DID_DNS_KTY_ED25519,
+      public_key_b64url: '',
+      blacklist: []
+    }
+  end
+
+  # Recompute fp = Base64URL(SHA-256(pk)[0:12]). Empty string on malformed pk.
+  def self.compute_fingerprint(id)
+    pk = base64url_decode(id[:public_key_b64url])
+    return '' if pk.nil? || pk.empty?
+    digest = Digest::SHA256.digest(pk)
+    base64url_encode(digest[0, DID_DNS_FINGERPRINT_BYTES])
+  end
+
+  # True iff declared fp matches recomputed fp over the pk bytes.
+  def self.fingerprint_chain_ok?(id)
+    !id[:fingerprint].empty? && id[:fingerprint] == compute_fingerprint(id)
+  end
+
+  def self.revoked?(id)
+    id[:blacklist].include?(id[:fingerprint])
+  end
+
+  def self.expired?(id, now)
+    id[:expires_at] != 0 && now >= id[:expires_at]
+  end
+
+  # Composite policy: v1 + ed25519 + chain + not revoked + not expired.
+  def self.did_dns_valid?(id, now)
+    id[:version] == 1 &&
+      id[:key_type] == DID_DNS_KTY_ED25519 &&
+      fingerprint_chain_ok?(id) &&
+      !revoked?(id) &&
+      !expired?(id, now)
+  end
+
+  # Parse a `k=v;k=v` segment (after the did:dns: prefix) into a hash.
+  def self.parse_did_dns_kv(segment)
+    out = {}
+    segment.split(';').each do |pair|
+      eq = pair.index('=')
+      next unless eq
+      k = pair[0...eq].strip
+      v = pair[(eq + 1)..].strip
+      out[k] = v
+    end
+    out
+  end
+
+  # Classify TXT records by did:dns: sub-type; assemble an identity.
+  # Returns nil if no did:dns records / declaration+pk missing.
+  def self.parse_did_dns_identity(txt_records)
+    decl_raw = pk_raw = black_raw = nil
+    txt_records.each do |raw|
+      s = raw.to_s.strip
+      if decl_raw.nil? && s.start_with?(DID_DNS_DECL_PREFIX)
+        decl_raw = s
+      elsif pk_raw.nil? && s.start_with?(DID_DNS_PK_PREFIX)
+        pk_raw = s
+      elsif black_raw.nil? && s.start_with?(DID_DNS_BLACK_PREFIX)
+        black_raw = s
+      end
+    end
+    return nil if decl_raw.nil? || pk_raw.nil?
+
+    decl = parse_did_dns_kv(decl_raw[DID_DNS_PREFIX.length..])
+    pk   = parse_did_dns_kv(pk_raw[DID_DNS_PREFIX.length..])
+
+    id = new_did_dns_identity
+    id[:version]           = decl.key?('v') ? decl['v'].to_i : 1
+    id[:fingerprint]       = decl['fp'] || ''
+    id[:nickname]          = decl['n'] || ''
+    id[:gender]            = decl['g'] || ''
+    id[:issued_at]         = decl.key?('iat') ? decl['iat'].to_i : 0
+    id[:expires_at]        = decl.key?('exp') ? decl['exp'].to_i : 0
+    id[:key_type]          = pk['kty'] || DID_DNS_KTY_ED25519
+    id[:public_key_b64url] = pk['pk'] || ''
+
+    unless black_raw.nil?
+      bkv = parse_did_dns_kv(black_raw[DID_DNS_PREFIX.length..])
+      fp_field = bkv['fp'] || ''
+      id[:blacklist] = fp_field.split(',').reject(&:empty?)
+    end
+    id
+  end
+
   # ---- self-test ----------------------------------------------------------
   if __FILE__ == $PROGRAM_NAME
     # Legacy parse tests
@@ -288,5 +414,44 @@ module KirinDNS
     raise 'nil identity for nonexistent' unless identity.nil?
 
     puts 'KirinDNS Ruby self-test: PASSED'
+
+    # ---- did:dns three-record identity model (C-1 baseline) ----
+    # Deterministic 32-byte key = bytes 0..31 (matches the golden vector).
+    pk_bytes = (0..31).to_a.pack('C*')
+    pk_b64 = base64url_encode(pk_bytes)
+    dg = Digest::SHA256.digest(pk_bytes)
+    fp_calc = base64url_encode(dg[0, DID_DNS_FINGERPRINT_BYTES])
+    now = 1_700_000_000
+
+    recs = [
+      'v=spf1 include:_spf.kirinnet.org -all',
+      "did:dns:v=1;fp=#{fp_calc};n=QWxpY2U;g=F;iat=#{now};exp=#{now + 3600}",
+      "did:dns:pk;kty=ed25519;pk=#{pk_b64}",
+      'did:dns:black;fp=RevokedAaaa,RevokedBbbb'
+    ]
+    did = parse_did_dns_identity(recs)
+    raise 'did:dns identity' unless did
+    raise 'did:dns version' unless did[:version] == 1
+    raise 'did:dns fp' unless did[:fingerprint] == fp_calc
+    raise 'did:dns kty' unless did[:key_type] == 'ed25519'
+    raise 'did:dns chain' unless fingerprint_chain_ok?(did)
+    raise 'did:dns valid' unless did_dns_valid?(did, now)
+    raise 'did:dns not revoked' if revoked?(did)
+
+    # Tampered pk -> chain breaks
+    wrong_b64 = base64url_encode("\xff" * 32)
+    tampered = [recs[0], recs[1], "did:dns:pk;kty=ed25519;pk=#{wrong_b64}"]
+    broken = parse_did_dns_identity(tampered)
+    raise 'tampered pk breaks chain' if fingerprint_chain_ok?(broken)
+
+    # Missing pk -> nil
+    raise 'missing pk -> nil' unless parse_did_dns_identity([recs[1]]).nil?
+    # No did:dns -> nil (legacy id= ignored)
+    raise 'no did:dns -> nil' unless parse_did_dns_identity(['v=spf1 -all', 'id=foo;key=bar']).nil?
+    # Wrong kty -> invalid
+    rsa_id = parse_did_dns_identity([recs[1], "did:dns:pk;kty=rsa;pk=#{pk_b64}"])
+    raise 'rsa kty rejected' unless rsa_id[:key_type] == 'rsa' && !did_dns_valid?(rsa_id, now)
+
+    puts 'KirinDNS Ruby did:dns self-test: PASSED (fingerprint chain)'
   end
 end

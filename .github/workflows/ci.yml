@@ -88,6 +88,158 @@ jobs:
         run: |
           cargo test --verbose
 
+  # ---------------------------------------------------------------------------
+  # D07/9.5/波1 — 15-language matrix expansion (2026-08-09)
+  # The jobs below cover the languages not buildable on the dev machine.
+  # Each runs the per-language self-test; the did:dns golden vector is the
+  # cross-language conformance anchor (see docs/协作记录.md §COM-04).
+  # ---------------------------------------------------------------------------
+
+  c-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up GCC
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: Build & run C self-test (-DTEST_KIRIN_DNS)
+        working-directory: 02_Libraries/c
+        run: |
+          gcc -std=c99 -Wall -Wextra -DTEST_KIRIN_DNS -o kirin_dns_test kirin_dns.c -lresolv
+          ./kirin_dns_test
+
+  cpp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up G++
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: Build & run C++ self-test (-DTEST_KIRIN_DNS)
+        working-directory: 02_Libraries/cpp
+        run: |
+          echo '#include "kirin_dns.hpp"' > test_main.cpp
+          echo 'int main(){ return 0; }' >> test_main.cpp
+          g++ -std=c++17 -Wall -Wextra -DTEST_KIRIN_DNS -I. -o kirin_dns_test test_main.cpp -lresolv
+          ./kirin_dns_test
+
+  csharp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build & run C# self-test
+        working-directory: 02_Libraries/csharp
+        run: |
+          dotnet build KirinDns.csproj
+          dotnet run --project KirinDns.csproj
+
+  java-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile & run Java self-test (-ea)
+        working-directory: 02_Libraries/java
+        run: |
+          javac KirinDns.java
+          java -ea KirinDns
+
+  kotlin-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Kotlin
+        run: |
+          curl -sSL https://github.com/JetBrains/kotlin/releases/latest/download/kotlin-compiler-linux-x64.zip -o kt.zip
+          sudo unzip -q kt.zip -d /opt/
+          echo "/opt/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Compile & run Kotlin self-test
+        working-directory: 02_Libraries/kotlin
+        run: |
+          kotlinc KirinDns.kt -include-runtime -d kirin_dns.jar
+          java -jar kirin_dns.jar
+
+  swift-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '5.9'
+      - name: Build & run Swift self-test
+        working-directory: 02_Libraries/swift
+        run: |
+          swiftc KirinDNS.swift -o kirin_dns_swift
+          ./kirin_dns_swift
+
+  dart-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Run Dart self-test
+        working-directory: 02_Libraries/dart
+        run: dart run kirin_dns.dart
+
+  lua-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Lua
+        run: sudo apt-get update && sudo apt-get install -y lua5.3
+      - name: Run Lua self-test
+        working-directory: 02_Libraries/lua
+        run: lua5.3 kirin_dns.lua
+
+  php-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: Run PHP self-test
+        working-directory: 02_Libraries/php
+        run: php kirin_dns.php
+
+  ruby-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+      - name: Run Ruby self-test
+        working-directory: 02_Libraries/ruby
+        run: ruby kirin_dns.rb
+
   lint:
     runs-on: ubuntu-latest
     steps:
