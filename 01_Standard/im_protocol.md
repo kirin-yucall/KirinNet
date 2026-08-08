@@ -18,7 +18,7 @@ name. Messages are encrypted end-to-end between User Nodes.
 
 - **Domain name** is the unique identifier (e.g., `alice.kirinnet.org`)
 - Each User Node generates a **Long-term RSA Key Pair** (4096-bit) on startup
-- The long-term public key is published via `/aura/profile`
+- The long-term public key is published via `/kirin/profile`
 - The long-term private key is stored locally and never transmitted
 
 ---
@@ -29,7 +29,7 @@ name. Messages are encrypted end-to-end between User Nodes.
 
 - Generated on first startup (or loaded from storage)
 - Used to verify identity during friend requests
-- Published in `/aura/profile` as `identity_key`
+- Published in `/kirin/profile` as `identity_key`
 
 ### 3.2. Session Key (Friendship Key)
 
@@ -43,10 +43,10 @@ name. Messages are encrypted end-to-end between User Nodes.
 ```
 Alice (alice.kirinnet.org)          Bob (bob.kirinnet.org)
      |                                   |
-     |--- POST /aura/friend/request --->|  Contains Alice's identity_key
+     |--- POST /kirin/friend/request --->|  Contains Alice's identity_key
      |                                   |  Bob stores request (status: pending)
      |                                   |
-     |<-- POST /aura/friend/accept ------|  Bob accepts, sends his identity_key
+     |<-- POST /kirin/friend/accept ------|  Bob accepts, sends his identity_key
      |                                   |
      |=== Session Key Exchange ===|  Alice generates session key pair,
      |                                   |  encrypts session public key with
@@ -65,7 +65,7 @@ Alice (alice.kirinnet.org)          Bob (bob.kirinnet.org)
 **Alice -> Bob:**
 
 ```
-POST http://bob.kirinnet.org:9090/aura/friend/request
+POST http://bob.kirinnet.org:9090/kirin/friend/request
 Content-Type: application/json
 
 {
@@ -89,7 +89,7 @@ Content-Type: application/json
 **Bob -> Alice:**
 
 ```
-POST http://alice.kirinnet.org:8080/aura/friend/accept
+POST http://alice.kirinnet.org:8080/kirin/friend/accept
 Content-Type: application/json
 
 {
@@ -112,7 +112,7 @@ Content-Type: application/json
 **DELETE:**
 
 ```
-DELETE http://bob.kirinnet.org:9090/aura/friend/block
+DELETE http://bob.kirinnet.org:9090/kirin/friend/block
 Content-Type: application/json
 
 {
@@ -138,7 +138,7 @@ Content-Type: application/json
 **Alice -> Bob:**
 
 ```
-POST http://bob.kirinnet.org:9090/aura/message
+POST http://bob.kirinnet.org:9090/kirin/message
 Content-Type: application/json
 
 {
@@ -162,7 +162,7 @@ Content-Type: application/json
 **GET:**
 
 ```
-GET http://localhost:8080/aura/messages?friend_domain=bob.kirinnet.org
+GET http://localhost:8080/kirin/messages?friend_domain=bob.kirinnet.org
 ```
 
 **Response (200):**
@@ -241,7 +241,7 @@ CREATE TABLE IF NOT EXISTS keys (
 2. **Identity verification:**
    - Friend requests include the sender's identity key (long-term RSA public key).
    - The recipient can verify the sender's identity by checking the domain
-     matches the key published in `/aura/profile`.
+     matches the key published in `/kirin/profile`.
 
 3. **Per-friend key isolation:**
    - Each friendship has its own session key pair.
@@ -276,3 +276,12 @@ CREATE TABLE IF NOT EXISTS keys (
 
 > **KirinNet IM Protocol** — Domain-based P2P messaging with RSA encryption.
 > Built on [KirinDNS](spec_v1.md) for seamless node discovery.
+
+---
+
+## 8. 变更记录
+
+| 版本 | 日期 | 变更 | 依据 |
+|---|---|---|---|
+| 1.0 | 2026-07-09 | 首版（Domain-based P2P IM，RSA 加密草案） | — |
+| 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处 `/aura/*` → `/kirin/*`（friend/profile/message/messages/block）；门禁 `grep -ri aura` 零残留 | 9.4 · C-2 · 波0 |
