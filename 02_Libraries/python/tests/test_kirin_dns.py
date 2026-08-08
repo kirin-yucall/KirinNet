@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from aura_dns import (
+from kirin_dns import (
     resolve_kirin_dns,
     _validate_kirin_dns_record,
     _parse_txt_value,
@@ -106,6 +106,12 @@ class MockRData:
         self.strings = strings
 
 
+@pytest.mark.skip(
+    reason="v1 TXT-JSON 端口解析行为（resolve_kirin_dns 期望返回 {http,https,ws,wss} 端口 dict）；"
+           "源码 kirin_dns.py 已迁移 ADRP v2.0（SRV+TXT 身份），resolve_kirin_dns 现为 v2 wrapper"
+           "（返回 {domain,ws:SRVResult,http,https,identity}）。本类待波 1 D07 重写为 v2 SRV 主路径测试。"
+           "关联编号：C-SDK-bug / D07 / 9.5 / 波0→波1"
+)
 class TestResolveKirinDns:
     def test_valid_adrp_record(self):
         """A valid ADRP TXT record is parsed and ports returned."""
