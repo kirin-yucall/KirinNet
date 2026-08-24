@@ -290,10 +290,10 @@ CREATE TABLE IF NOT EXISTS keys (
   compromised User Node cannot forge another user's messages without
   their Ed25519 private key.
 
-### 7.4. Signature Challenge-Response (T9 · Draft · Pending KNET-CC Sign-off)
+### 7.4. Signature Challenge-Response (T9 · Final, KNET-CC-011 Signed-off)
 
-> **Status: Draft — technical specification finalized, pending Node PM
-> sign-off (KNET-CC) before marking as final.**
+> **Status: Final — signed off by Node PM (KNET-CC-011, 2026-08-08
+> conditional approval, conditions fulfilled and closed).**
 > Basis: `DECISIONS.md` §9.3 (P-ARCH technical specification) and
 > `security_model_v1.md` §7.2.1.
 
@@ -319,9 +319,10 @@ nodes uses a signature challenge-response flow (T9):
 
 > **P-FLOOD reference:** T1 (flood message format) `forward_chain` and T3
 > (trust weight) `trust_weight` (int8 -127~100) fields MUST reference this signature coverage
-> (§9.3.2), not redefine it. P-FLOOD drafts must mark "references T9
-> draft — unsigned". **Sign-off requirement:** T9 requires Node PM
-> sign-off (KNET-CC, affects node-side sign/verify code) before final.
+> (§9.3.2), not redefine it. P-FLOOD drafts must mark "references T9 —
+> final, KNET-CC-011 signed-off". **Sign-off record:** T9 signed off by
+> Node PM (KNET-CC-011, 2026-08-08 conditional approval, conditions
+> fulfilled and closed).
 
 ---
 

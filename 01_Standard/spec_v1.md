@@ -75,13 +75,16 @@ service is listening, and (2) the domain owner's identity metadata.
 
 ### 2.2. SRV Service Names
 
-ADRP defines three SRV service names under the `_tcp` protocol:
+ADRP defines three SRV service names for node services under the `_tcp`
+protocol, plus one relay capability-announcement name (KNET-CC-013,
+2026-08-24):
 
 | Service   | SRV Name             | Description                    |
 |-----------|----------------------|--------------------------------|
 | HTTP      | `_kirinnet-http._tcp` | HTTP service port              |
 | HTTPS     | `_kirinnet-https._tcp`| HTTPS service port             |
 | WebSocket | `_kirinnet-ws._tcp`   | WebSocket service port         |
+| Relay     | `_kirinnet-relay._tcp`| Relay service discovery — a relay operator announces this SRV under its own domain; defined in the [Relay Protocol §3.1](./relay_protocol.md) |
 
 A Client issues standard SRV queries (RFC 2782) for the relevant service
 name under the target domain name.
@@ -379,6 +382,15 @@ dangerous because it can fully redirect both host and port.
    or target hostname. The certificate's Subject Alternative Name (SAN)
    MUST match the original domain, NOT the SRV target.
 
+> **Relay-scenario note (KNET-CC-013, 2026-08-24):** The rule in
+> mitigation 3 applies verbatim to **direct** connections. When the
+> path traverses a relay (SRV target = relay endpoint), certificate
+> validation is layered instead: transport-layer TLS validates the
+> **relay endpoint domain** (SNI/SAN vs. the SRV target), while node
+> identity is verified at the application layer (did:dns TXT + T9
+> signature challenge) over the tunnel. Direct-mode semantics are
+> unchanged. See [Relay Protocol §9.2](./relay_protocol.md).
+
 ### 4.2. DNSSEC Integration
 
 ADRP SRV and TXT records SHOULD be signed under DNSSEC. When a Client
@@ -466,6 +478,7 @@ IANA is requested to register the following SRV service names under the
 | `_kirinnet-http`      | TCP       | KirinNet HTTP service     | [this document]|
 | `_kirinnet-https`     | TCP       | KirinNet HTTPS service    | [this document]|
 | `_kirinnet-ws`        | TCP       | KirinNet WebSocket service| [this document]|
+| `_kirinnet-relay`     | TCP       | KirinNet relay service discovery | [Relay Protocol](./relay_protocol.md) (KNET-CC-013, 2026-08-24) |
 
 ### 6.2. TXT Record Format
 

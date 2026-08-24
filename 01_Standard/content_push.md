@@ -2,10 +2,10 @@
 
 > **Version:** 0.1（草案）
 > **Date:** 2026-08-24
-> **Status:** 草案 v0.1 · 未会签 · 单边定稿无效
+> **Status:** **已会签定稿（KNET-CC-012，2026-08-24 节点 PM 会签附条件通过·随单条件已履约·已合并 master·联合关闭）**
 > **Scope:** 定向推送语义（T1 `publish` 包的直达变体）、链接卡片格式、展示节点接收/校验/存储/展示/跳转行为、抗屏蔽（opt-out）语义、节点广告位友情展现、统一端点契约、节点仓 12 篇公共索引（indexed_content）语义调整映射
-> **关联编号:** KNET-CC-012（待 X-CC 立单）/ 需求变更·爬虫下线·内容广告模型重构（`docs\协作记录.md` §COM-01，2026-08-09 甲方权威口径）/ T1（`publish` 包承载与信封，**引用不重定义**，KNET-CC-007 会签通过）/ T9（签名覆盖范围，**引用不重定义**，`DECISIONS.md` §9.3 + `did-dns-protocol.md` §3.5，KNET-CC-011 会签通过并关闭）/ T4（creator_domain 端点解析 direct/relay，**引用不重定义**）/ did-dns §2（did:dns 三记录，**引用不重定义**）/ 节点仓 10 篇 FR4（内容推送）/ 12 篇（公共索引）/ FR11（入站限频口径）
-> **引用口径:** 被引文件（flood_protocol.md / did-dns-protocol.md / DECISIONS.md §9.3）文件头如保留会签前「草案·未会签」字样，以协作记录 §KNET-CC 会签结论（CC-007/CC-011 已会签）为准；本文件引用其 master 版本，**不重定义**其任何字段、算法与覆盖范围。
+> **关联编号:** KNET-CC-012（**节点 PM 会签附条件通过 2026-08-24 22:30·条件履约·合并 master·联合关闭**）/ 需求变更·爬虫下线·内容广告模型重构（`docs\协作记录.md` §COM-01，2026-08-09 甲方权威口径）/ T1（`publish` 包承载与信封，**引用不重定义**，KNET-CC-007 会签通过）/ T9（签名覆盖范围，**引用不重定义**，`DECISIONS.md` §9.3 + `did-dns-protocol.md` §3.5，KNET-CC-011 会签通过并关闭）/ T4（creator_domain 端点解析 direct/relay，**引用不重定义**）/ did-dns §2（did:dns 三记录，**引用不重定义**）/ 节点仓 10 篇 FR4（内容推送）/ 12 篇（公共索引）/ FR11（入站限频口径）
+> **引用口径:** 被引文件（flood_protocol.md / did-dns-protocol.md / DECISIONS.md §9.3）文件头已随 KNET-CC-012 履约重戳为已会签定稿（CC-007/CC-011，2026-08-24）；本文件引用其 master 版本，**不重定义**其任何字段、算法与覆盖范围。
 
 ---
 
@@ -16,7 +16,7 @@
 | 草案定位 | v0.1 定义：① 定向推送 = T1 `publish` 包的**直达变体**（点对点，ttl=1，不走好友链泛洪）；② **链接卡片**（link card）格式——推送的是链接而非内容本体；③ 展示节点极轻行为契约（接收→校验 fail-closed→存卡片→展示→跳转回内容节点）；④ 抗屏蔽 opt-out 语义；⑤ 节点广告位友情展现（波 1 免费互换，付费留接口不定型）；⑥ 统一端点口径（`POST /api/v2/push/card`）；⑦ 节点仓 12 篇 indexed_content 语义调整映射建议 |
 | 需求依据 | 甲方权威口径（§COM-01 2026-08-09）：① 爬虫探索（节点仓 06 篇）下线；② 内容节点定向推送**链接**到展示节点（非内容本体）；③ 展示节点极轻（只存链接卡片，点击新开页面跳回内容节点）；④ 广告留在内容节点（展示节点不掺和）；⑤ 抗屏蔽（内容节点被部分节点屏蔽不影响其内容经其他节点展示）；⑥ 节点自身可有广告位（接其他节点投放或商业链接）；⑦ 节点间广告波 1 只做**友情展现**（免费互换），付费结算后定 |
 | 反提炼对象 | 节点仓 `需求文档\10_社交与推送.md` FR4（push.js 推送现状：DoH 解析目标 + /health 探活 + POST metadata）+ `需求文档\12_公共索引.md`（indexed_content 薄索引、push_blacklist、已知缺陷 7.1 无签名校验 / 7.4 端点契约不符）+ 节点仓现状（2026-08-09 废弃处置 commit 0698512：explore.js/indexer.js/indexed_content 已下线删除，push.js 保留） |
-| 会签要求 | 本文件属**跨仓端点/推送语义契约**，须经节点 PM 会签（KNET-CC-012，X-CC 立单）后方可标「定稿」；未会签前**单边定稿无效**，节点侧不得据本草案启动实现（fail-closed） |
+| 会签记录 | 本文件属**跨仓端点/推送语义契约**，已经节点 PM 会签（**KNET-CC-012，2026-08-24 22:30 附条件通过·随单条件已履约（409 统一/invalid_slot 补句/被引文件头重戳）·已合并 master·联合关闭**）；协作记录 `docs\协作记录.md` §KNET-CC-012 为权威状态源 |
 | 不越界 | T1 信封结构与包类型枚举归 T1（本文件仅定义 `publish` 直达语义叠加，T1 §3 已明文「publish 语义归内容发布域，T1 仅承载」——本文件即该语义主笔）；签名算法/挑战码/覆盖范围归 T9（卡片级签名的**规范化规则沿用** T9 §9.3.2，覆盖对象为本文件新定义字段，属本文件契约不属 T9 修订）；creator_domain 端点解析（SRV/多候选/direct→relay 回退）归 T4/spec_v1；中继隧道 wire 编码归波 1 T7；付费投放结算语义**不定型**（付费后定）；商业广告位（08/09 篇）节点侧逻辑调整归节点 PM |
 
 ---
@@ -214,7 +214,7 @@ sign_input = JCS(card 除 creator_sig 外的全部字段) + "\n" + payload.targe
 | 2 | 信封结构完整（T1 §2 字段齐全、类型正确）、`v=1`、`type="publish"` | 400 `invalid_envelope` |
 | 3 | `ttl == 1` 且 `forward_chain == [src_domain]`（§2.3 定向约束） | 400 `not_direct_form` |
 | 4 | `payload.delivery == "direct"`、`payload.target_domain == 本节点域名` | 400 `target_mismatch` |
-| 5 | `query_id + nonce` 去重表未命中（T1 §5.2 防重放） | 409 语义按幂等处理（§9.3）或 400 `replayed` |
+| 5 | `query_id + nonce` 去重表未命中（T1 §5.2 防重放；命中即重放包） | 409 `replayed`（节点 PM 会签裁定**统一 409**，幂等重放，§9.3） |
 | 6 | 信封 `signature` 验签（覆盖引用 T9 §9.3.2；公钥 = DoH/DoT 解析 `src_domain` 的 `did:dns:pk`） | 400 `bad_signature` |
 | 7 | 入站限频：每 `src_domain` ≤30 次/分（对齐节点 02 篇 FR11 入站限频口径，本地策略） | 429 `rate_limited` |
 
@@ -329,6 +329,7 @@ jump_url = "https://" + creator_domain + "/view/" + content_key
 - 与内容卡片的差异仅 3 处：`card_type="ad_slot"`、新增 `slot_id`（投放目标位标识，由展示节点对外公布）、`price_hint`（§8.3）。
 - `content_type` 恒 `"ad"`（落地页具体形态不影响广告位展示）。
 - 校验/签名/存储/跳转**完全复用** §4~§6 契约（同一验签链、同一跳转构造）；`exp − iat` 建议 ≤30 天（友情位短周期互换）。
+- `ad_slot` **附加校验**（`slot_id` 格式 `[a-z0-9-]{1,32}`、`content_type` 恒 `"ad"`、`price_hint` 恒 `null` 等 §8 约束）失败 → **400 `invalid_slot`**（错误码与 §9.3 枚举对应；区别于 §5.3 通用卡片校验失败的 `invalid_card`）。
 - 广告点击后落地页及其广告归投放方节点（同 §6.3 边界）。
 
 ### 8.3 付费投放：留接口不定型（守「付费结算后定」口径）
@@ -371,7 +372,8 @@ jump_url = "https://" + creator_domain + "/view/" + content_key
 | 状态码 | 场景 | 响应体 |
 |---|---|---|
 | 200 | 收录成功 / 幂等重推更新 | `{"status":"accepted","card_id":<本地ID>,"updated":<bool>}`（`(creator_domain,content_key)` 命中已有记录 → upsert，`updated:true`） |
-| 400 | 校验失败（§5.2/§5.3 各项，fail-closed 明确拒因） | `{"error":"<invalid_envelope|not_direct_form|target_mismatch|replayed|bad_signature|invalid_card|creator_mismatch|stale_card|expired_card|creator_dns_invalid|bad_creator_sig|invalid_slot>","detail":"..."}` |
+| 400 | 校验失败（§5.2/§5.3 各项，fail-closed 明确拒因） | `{"error":"<invalid_envelope|not_direct_form|target_mismatch|bad_signature|invalid_card|creator_mismatch|stale_card|expired_card|creator_dns_invalid|bad_creator_sig|invalid_slot>","detail":"..."}` |
+| 409 | 防重放命中（§5.2 第 5 项：`query_id + nonce` 已见于去重表，节点 PM 会签裁定**统一 409**） | `{"error":"replayed"}`（幂等重放：重放包不重复收录、不触发 upsert 更新；与 200 `updated:true` 的同键新信封重推区分） |
 | 403 | 黑名单 opt-out（§7） | `{"error":"blacklisted"}` |
 | 404 | 端点未启用（展示功能关闭 / 未开广告位） | `{"error":"not_enabled"}` |
 | 429 | 入站限频（§5.2 第 7 项） | `{"error":"rate_limited","retry_after_ms":<ms>}` |
@@ -462,13 +464,13 @@ jump_url = "https://" + creator_domain + "/view/" + content_key
 
 ---
 
-## 14. 待会签 / 待定稿项（标注「草案」）
+## 14. 会签状态与遗留项
 
 | 项 | 归属 | 状态 |
 |---|---|---|
-| 端点路径 `/api/v2/push/card` + `/api/v2/push/adslot`（跨仓契约） | 本文件 / 节点 PM 会签（KNET-CC-012） | **草案·待会签** |
-| 跳转 URL 规则 `/view/<content_key>`（内容节点侧须落地公开内容页） | 本文件 / 节点 PM 会签 | **草案·待会签**（波 1 过渡方案 §6.1） |
-| 链接卡片字段定稿（字段集/长度上限/枚举） | 本文件 / 节点 PM 会签 | **草案·待会签** |
+| 端点路径 `/api/v2/push/card` + `/api/v2/push/adslot`（跨仓契约） | 本文件 / 节点 PM 会签（KNET-CC-012） | **已会签定稿（KNET-CC-012，2026-08-24）** |
+| 跳转 URL 规则 `/view/<content_key>`（内容节点侧须落地公开内容页） | 本文件 / 节点 PM 会签 | **已会签定稿（KNET-CC-012，2026-08-24；波 1 过渡方案 §6.1）** |
+| 链接卡片字段定稿（字段集/长度上限/枚举） | 本文件 / 节点 PM 会签 | **已会签定稿（KNET-CC-012，2026-08-24）** |
 | indexed_content 重建映射（§10.2 建议，实现细节归节点 PM） | 节点 PM | 建议，不强制 |
 | `flood` 投递形态启用排期（依赖节点泛洪引擎实现，fail-closed） | T1 + 节点侧 | 待节点泛洪引擎就绪 |
 | 付费投放语义（price_hint 之外的一切付费模型） | 付费结算后另立草案 | **不定型**（§8.3） |

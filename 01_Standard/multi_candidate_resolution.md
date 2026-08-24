@@ -217,7 +217,7 @@ KirinNet 是**无中心权威**的去中心化网络，**不做域名唯一性�
 | answer 包 wire（candidates 承载） | T1 / P-FLOOD | **引用 T1 草案·未会签** |
 | trust_weight 取值与聚合 | T3 / P-FLOOD | **引用 T3 草案·未会签** |
 | 候选权重签名覆盖 | T9 / P-ARCH | **引用 T9 草案·未会签** |
-| relay tunnel_id wire 编码 | 波 1 T7（实机验证） | 本文件不定型 |
+| relay tunnel_id wire 编码 | 已在 relay_protocol.md 定型（KNET-CC-013，2026-08-24 会签） | 本文件不定型，引用不重定义 |
 | 客户端默认策略（取首位/direct优先） | T4 会签定稿 | 草案建议，待会签 |
 
 ---
