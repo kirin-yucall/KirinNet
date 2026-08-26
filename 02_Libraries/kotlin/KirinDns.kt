@@ -27,6 +27,7 @@ package kirinnet
 
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.Hashtable
 import javax.naming.directory.InitialDirContext
 
 // ---------------------------------------------------------------------------
