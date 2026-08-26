@@ -610,17 +610,19 @@ Future<void> main() async {
   assert(id == null, 'no TXT identity for nonexistent domain');
 
   // Identity parser
-  final parsed = parseIdentityTxt(
+  final parsedNullable = parseIdentityTxt(
       'id=550e8400-e29b-41d4-a716-446655440000;key=04abc;nick=Alice;ipfs=false');
-  assert(parsed != null, 'identity parsed');
-  assert(parsed!['id'] == '550e8400-e29b-41d4-a716-446655440000', 'id');
+  assert(parsedNullable != null, 'identity parsed');
+  final parsed = parsedNullable!;
+  assert(parsed['id'] == '550e8400-e29b-41d4-a716-446655440000', 'id');
   assert(parsed['key'] == '04abc', 'key');
   assert(parsed['nick'] == 'Alice', 'nick');
   assert(parsed['ipfs'] == false, 'ipfs bool');
 
-  final minimal = parseIdentityTxt('id=test-id;key=0x00');
-  assert(minimal != null, 'minimal');
-  assert(minimal!['id'] == 'test-id', 'minimal id');
+  final minimalNullable = parseIdentityTxt('id=test-id;key=0x00');
+  assert(minimalNullable != null, 'minimal');
+  final minimal = minimalNullable!;
+  assert(minimal['id'] == 'test-id', 'minimal id');
   assert(minimal['key'] == '0x00', 'minimal key');
   assert(!minimal.containsKey('nick'), 'no nick');
 

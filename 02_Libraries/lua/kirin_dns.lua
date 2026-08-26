@@ -17,6 +17,9 @@
 --   --> {id="550e8400-...", key="04abc...", nick="Alice"}
 -- =============================================================================
 
+-- Lua 5.2 moved global unpack() into table.unpack(); keep 5.1 compatibility.
+local unpack = table.unpack or unpack
+
 local kirin_dns = {}
 
 -- ---------------------------------------------------------------------------

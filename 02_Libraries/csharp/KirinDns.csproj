@@ -8,10 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <!-- The .cs ships its own self-test Main(); no test runner dependency. -->
+    <!-- KirinDns.cs is picked up by the SDK's default Compile glob; listing it
+         explicitly duplicates the item and triggers NETSDK1022. -->
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Include="KirinDns.cs" />
-  </ItemGroup>
 
 </Project>

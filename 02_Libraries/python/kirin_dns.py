@@ -54,9 +54,9 @@ except ImportError:  # pragma: no cover - json is stdlib, always present
 # ---------------------------------------------------------------------------
 
 _SRV_SERVICES = {
-    "http":  "_kirinnet-http._tcp",
+    "http": "_kirinnet-http._tcp",
     "https": "_kirinnet-https._tcp",
-    "ws":    "_kirinnet-ws._tcp",
+    "ws": "_kirinnet-ws._tcp",
 }
 
 _FALLBACK_PORTS = {
@@ -346,8 +346,9 @@ def resolve_identity(domain: str) -> Optional[Dict]:
         return None
 
     for rdata in answers:
-        txt = "".join(s.decode("utf-8") if isinstance(s, bytes) else s
-                       for s in rdata.strings)
+        txt = "".join(
+            s.decode("utf-8") if isinstance(s, bytes) else s for s in rdata.strings
+        )
         identity = parse_identity_txt(txt)
         if identity:
             return identity
@@ -496,7 +497,7 @@ if __name__ == "__main__":
         "v=spf1 include:_spf.kirinnet.org -all",  # SPF — ignored
         f"did:dns:v=1;fp={fp};n=QWxpY2U;g=F;iat={now};exp={now + 3600}",
         f"did:dns:pk;kty=ed25519;pk={pk_b64}",
-        f"did:dns:black;fp=RevokedAaaa,RevokedBbbb",
+        "did:dns:black;fp=RevokedAaaa,RevokedBbbb",
     ]
     ident = parse_did_dns_identity(recs)
     assert ident is not None, "did:dns identity must parse"
@@ -518,7 +519,7 @@ if __name__ == "__main__":
     assert not broken.fingerprint_chain_ok(), "tampered pk must break chain"
 
     # Revoked -> invalid
-    revoked_recs = [r.replace(f"fp={fp}", f"fp=RevokedAaaa") for r in recs]
+    revoked_recs = [r.replace(f"fp={fp}", "fp=RevokedAaaa") for r in recs]
     revoked = parse_did_dns_identity(revoked_recs)
     assert revoked.is_revoked()
 

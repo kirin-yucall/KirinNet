@@ -15,7 +15,6 @@ JS/C#/Java/Kotlin/Go/Rust/C/C++). Run: pytest tests/test_did_dns.py -v
 
 import base64
 import hashlib
-import time
 
 import pytest
 
@@ -110,7 +109,7 @@ class TestDidDnsParsing:
         assert parse_did_dns_identity([f"did:dns:pk;kty=ed25519;pk={pk_b64}"]) is None
 
     def test_missing_pk_returns_none(self, fp, now):
-        assert parse_did_dns_identity([f"did:dns:v=1;fp={fp};iat={now};exp={now+1}"]) is None
+        assert parse_did_dns_identity([f"did:dns:v=1;fp={fp};iat={now};exp={now + 1}"]) is None
 
     def test_no_did_dns_returns_none(self):
         # Legacy id=;key= TXT must NOT be misclassified as did:dns
@@ -119,7 +118,7 @@ class TestDidDnsParsing:
 
     def test_accepts_single_string(self, fp, pk_b64, now):
         # Single record (declaration only) — must still return None (no pk)
-        assert parse_did_dns_identity(f"did:dns:v=1;fp={fp};iat={now};exp={now+1}") is None
+        assert parse_did_dns_identity(f"did:dns:v=1;fp={fp};iat={now};exp={now + 1}") is None
 
     def test_accepts_bytes(self, fp, pk_b64, now):
         recs = [r.encode() for r in _records(fp, pk_b64, now)]
@@ -220,7 +219,7 @@ class TestNicknameDecode:
         assert idn.nickname_decoded() is None
 
     def test_unicode_nickname(self, fp, pk_b64, now):
-        # Base64URL("麒麟") 
+        # Base64URL("麒麟")
         import base64 as b64
         enc = b64.urlsafe_b64encode("麒麟".encode("utf-8")).decode().rstrip("=")
         idn = parse_did_dns_identity(_records(fp, pk_b64, now, n=enc))

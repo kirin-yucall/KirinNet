@@ -118,8 +118,9 @@ jobs:
       - name: Build & run C++ self-test (-DTEST_KIRIN_DNS)
         working-directory: 02_Libraries/cpp
         run: |
+          # kirin_dns.hpp defines its own main() under -DTEST_KIRIN_DNS, so the
+          # translation unit must contain nothing but the include.
           echo '#include "kirin_dns.hpp"' > test_main.cpp
-          echo 'int main(){ return 0; }' >> test_main.cpp
           g++ -std=c++17 -Wall -Wextra -DTEST_KIRIN_DNS -I. -o kirin_dns_test test_main.cpp -lresolv
           ./kirin_dns_test
 
@@ -166,9 +167,11 @@ jobs:
           java-version: '17'
       - name: Set up Kotlin
         run: |
-          curl -sSL https://github.com/JetBrains/kotlin/releases/latest/download/kotlin-compiler-linux-x64.zip -o kt.zip
-          sudo unzip -q kt.zip -d /opt/
-          echo "/opt/kotlinc/bin" >> "$GITHUB_PATH"
+          # Pinned release asset: releases/latest/download/kotlin-compiler-linux-x64.zip
+          # no longer resolves to a real asset and yields an HTML page (unzip fails).
+          curl -sSL --fail https://github.com/JetBrains/kotlin/releases/download/v2.4.10/kotlin-compiler-2.4.10.zip -o kt.zip
+          mkdir -p "$HOME/.local" && unzip -q kt.zip -d "$HOME/.local/"
+          echo "$HOME/.local/kotlinc/bin" >> "$GITHUB_PATH"
       - name: Compile & run Kotlin self-test
         working-directory: 02_Libraries/kotlin
         run: |
@@ -183,7 +186,7 @@ jobs:
       - name: Set up Swift
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '5.9'
+          swift-version: '6.1.2'
       - name: Build & run Swift self-test
         working-directory: 02_Libraries/swift
         run: |
@@ -256,4 +259,6 @@ jobs:
         working-directory: 02_Libraries/javascript
         run: |
           npm install --save-dev eslint
-          npx eslint . --no-eslintrc --env=node --env=es2022
+          # ESLint >=9 removed --no-eslintrc/--env; --no-config-lookup is the
+          # flat-config equivalent (no rules -> syntax/parse check only).
+          npx eslint . --no-config-lookup
