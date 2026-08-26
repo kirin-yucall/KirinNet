@@ -72,14 +72,14 @@ public sealed class DidDnsIdentity
     public string RawPublicKey { get; set; } = "";
 
     public byte[] PublicKeyBytes =>
-        Base64UrlDecode(PublicKeyB64Url);
+        KirinDns.Base64UrlDecode(PublicKeyB64Url);
 
     /// <summary>Recompute fp = Base64URL(SHA-256(pk)[0:12]).</summary>
     public string ComputeFingerprint()
     {
         using var sha = SHA256.Create();
         var digest = sha.ComputeHash(PublicKeyBytes);
-        return Base64UrlEncode(digest, 0, 12);
+        return KirinDns.Base64UrlEncode(digest, 0, 12);
     }
 
     public bool FingerprintChainOk() =>
@@ -109,7 +109,7 @@ public sealed class DidDnsIdentity
     public string? NicknameDecoded()
     {
         if (string.IsNullOrEmpty(Nickname)) return null;
-        try { return Encoding.UTF8.GetString(Base64UrlDecode(Nickname)); }
+        try { return Encoding.UTF8.GetString(KirinDns.Base64UrlDecode(Nickname)); }
         catch { return null; }
     }
 }

@@ -235,8 +235,11 @@ private func sha256(_ data: [UInt8]) -> [UInt8] {
     for off in stride(from: 0, to: msg.count, by: 64) {
         var m = [UInt32](repeating: 0, count: 64)
         for i in 0..<16 {
-            m[i] = (UInt32(msg[off+i*4])<<24)|(UInt32(msg[off+i*4+1])<<16)|
-                   (UInt32(msg[off+i*4+2])<<8)|UInt32(msg[off+i*4+3])
+            let b0 = UInt32(msg[off + i*4])
+            let b1 = UInt32(msg[off + i*4 + 1])
+            let b2 = UInt32(msg[off + i*4 + 2])
+            let b3 = UInt32(msg[off + i*4 + 3])
+            m[i] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
         }
         for i in 16..<64 {
             let s0 = rotr(m[i-15],7) ^ rotr(m[i-15],18) ^ (m[i-15] >> 3)
@@ -267,7 +270,7 @@ private let b64urlAlphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 
 /// Base64URL encode (RFC 4648 §5, no padding).
 private func base64urlEncode(_ bytes: [UInt8]) -> String {
-    var out = ""; var val=0, valb=-6
+    var out = ""; var val = 0, valb = -6
     for b in bytes {
         val = (val << 8) | Int(b); valb += 8
         while valb >= 0 { out.append(b64urlAlphabet[(val >> valb) & 0x3f]); valb -= 6 }
@@ -280,7 +283,7 @@ private func base64urlEncode(_ bytes: [UInt8]) -> String {
 private func base64urlDecode(_ s: String) -> [UInt8]? {
     var rev = [Int](repeating: -1, count: 256)
     for i in 0..<64 { rev[Int(b64urlAlphabet[i].asciiValue!)] = i }
-    var out = [UInt8](); var val=0, valb=-8
+    var out = [UInt8](); var val = 0, valb = -8
     for ch in s.utf8 {
         if ch == 0x3d { continue } // '='
         let d = rev[Int(ch)]

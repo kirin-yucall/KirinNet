@@ -7,7 +7,6 @@ Dependencies: pytest, dnspython
     pip install pytest dnspython
 """
 
-import json
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -16,8 +15,6 @@ from kirin_dns import (
     resolve_kirin_dns,
     _validate_kirin_dns_record,
     _parse_txt_value,
-    _RECOGNIZED_KEYS,
-    _FALLBACK_PORTS,
 )
 
 import dns.resolver

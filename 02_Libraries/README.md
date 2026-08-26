@@ -217,29 +217,30 @@ val id  = resolveIdentityDidDns("alice.kirinnet.org")       // DidDnsIdentity?
 | 档位 | 含义 |
 |---|---|
 | ✅ 已测（真机） | 本机已跑门禁命令并通过（单测 / self-test 全绿） |
+| ✅ 已测（CI 实机） | GitHub Actions ubuntu-latest 上实跑门禁命令并通过（TD-14：PR #1 run 32996637784，2026-08-26，20/20 job 全绿） |
 | 🟡 代码就绪·待实机 | 源码已对齐 v2.0（SRV + did:dns + 身份），本机缺工具链无法实跑；CI 已配该语言 job，待 CI 出绿 |
 | 🔴 待迁移 | 仍是 v1 TXT-JSON 模型（D07 后已清零，本档保留作占位） |
 
-> 说明：D07（2026-08-09）已完成 15 语言全部对齐 ADRP v2.0——C#/Java/Kotlin 三门已从 v1 TXT-JSON 重写为 did:dns 三记录 + SRV 新基线（源码完整，仅本机缺 .NET/JDK/Kotlin 工具链未实跑），不再有「待迁移」。`🔴 待迁移` 档位保留为占位，当前无任何语言落入此档。
+> 说明：D07（2026-08-09）已完成 15 语言全部对齐 ADRP v2.0——C#/Java/Kotlin 三门已从 v1 TXT-JSON 重写为 did:dns 三记录 + SRV 新基线（源码完整，仅本机缺 .NET/JDK/Kotlin 工具链未实跑），不再有「待迁移」。`🔴 待迁移` 档位保留为占位，当前无任何语言落入此档。TD-14（2026-08-26）CI 15 语言矩阵全绿后，「待实机」档清零。
 
 | 语言 | 门禁命令 | 当前状态 | 说明 |
 |---|---|---|---|
 | Python | `pytest tests/` | ✅ 已测（真机） | **52 passed / 9 skipped / 0 error**（v1 端口解析类 9 例 skip 标注波1重写，did:dns/SRV 主路径全绿） |
 | JavaScript | `node javascript/kirin_dns.js`（self-test） | ✅ 已测（真机） | self-test **43 passed**（SRV + did:dns 身份解析主路径全覆盖） |
 | Rust | `cargo test` | ✅ 已测（真机） | **27 passed + 2**（v1 解析 + v2 `Identity::parse`/`srv_service_name`/SRV 实查覆盖） |
-| C | `gcc -std=c99 ... -DTEST_KIRIN_DNS`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2（SRV + did:dns），本机缺 libresolv 环境未实跑；CI `c-tests` job 已配 |
-| C++ | `g++ -std=c++17 ... -DTEST_KIRIN_DNS`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2（header-only），本机缺环境；CI `cpp-tests` job 已配 |
-| Go | `go test ./...` | 🟡 代码就绪·待实机 | 源码已对齐 v2；**注意假绿**：现有 test 偏重 v1 `parseTxtV1`，SRV 主路径已写但本机无 Go 工具链，待 CI `go-tests` 实跑核验 |
-| C# | `dotnet build/run`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`ResolveService`/`ResolveIdentityDidDns`），本机无 .NET；CI `csharp-tests` job 已配 |
-| Java | `javac && java -ea`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`resolveService`/`parseDidDnsIdentity`），本机无 JDK；CI `java-tests` job 已配 |
-| Kotlin | `kotlinc -include-runtime ...`（self-test） | 🟡 代码就绪·待实机 | D07 已从 v1 重写为 did:dns 三记录 + SRV（`resolveService`/`parseDidDnsIdentity`），本机无 Kotlin/JVM；CI `kotlin-tests` job 已配 |
-| Swift | `swift run`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Swift；CI `swift-tests` job 已配 |
-| Dart | `dart run`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Dart；CI `dart-tests` job 已配 |
-| Lua | `lua kirin_dns.lua`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Lua 5.1；CI `lua-tests` job 已配 |
-| PHP | `php kirin_dns.php`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 PHP；CI `php-tests` job 已配 |
-| Ruby | `ruby kirin_dns.rb`（self-test） | 🟡 代码就绪·待实机 | 源码已对齐 v2；本机无 Ruby；CI `ruby-tests` job 已配 |
+| C | `gcc -std=c99 ... -DTEST_KIRIN_DNS`（self-test） | ✅ 已测（CI 实机） | CI `c-tests`（ubuntu-latest）实跑通过，run 32996637784 |
+| C++ | `g++ -std=c++17 ... -DTEST_KIRIN_DNS`（self-test） | ✅ 已测（CI 实机） | CI `cpp-tests`（ubuntu-latest）实跑通过（TD-14 修 test_main 重复 main），run 32996637784 |
+| Go | `go test ./...` | ✅ 已测（CI 实机） | CI `go-tests`（ubuntu-latest）实跑通过，run 32996637784；测试偏重 v1 `parseTxtV1` 的覆盖缺口仍在（见 v2.1 行） |
+| C# | `dotnet build/run`（self-test） | ✅ 已测（CI 实机） | CI `csharp-tests`（ubuntu-latest, .NET 8）实跑通过（TD-14 修 csproj 重复 Compile + Base64Url 类限定），run 32996637784 |
+| Java | `javac && java -ea`（self-test） | ✅ 已测（CI 实机） | CI `java-tests`（ubuntu-latest, JDK 17）实跑通过，run 32996637784 |
+| Kotlin | `kotlinc -include-runtime ...`（self-test） | ✅ 已测（CI 实机） | CI `kotlin-tests`（ubuntu-latest, 编译器钉 v2.4.10）实跑通过（TD-14 修下载 URL + Hashtable 导入），run 32996637784 |
+| Swift | `swift run`（self-test） | ✅ 已测（CI 实机） | CI `swift-tests`（ubuntu-latest, Swift 6.1.2）实跑通过（TD-14 修 toolchain 404 + 两处词法），run 32996637784 |
+| Dart | `dart run`（self-test） | ✅ 已测（CI 实机） | CI `dart-tests`（ubuntu-latest, stable）实跑通过（TD-14 修自测空安全），run 32996637784 |
+| Lua | `lua kirin_dns.lua`（self-test） | ✅ 已测（CI 实机） | CI `lua-tests`（ubuntu-latest, lua5.3）实跑通过（TD-14 加 unpack 兼容 shim），run 32996637784 |
+| PHP | `php kirin_dns.php`（self-test） | ✅ 已测（CI 实机） | CI `php-tests`（ubuntu-latest, PHP 8.2）实跑通过，run 32996637784 |
+| Ruby | `ruby kirin_dns.rb`（self-test） | ✅ 已测（CI 实机） | CI `ruby-tests`（ubuntu-latest, Ruby 3.2）实跑通过，run 32996637784 |
 
-> CI 矩阵（`.github/workflows/ci.yml`）已扩到 **15 语言矩阵 = 14 语言 job + lint**：Python(3.9-3.12)/JS(Node18/20/22)/Go/Rust/C/C++/C#/Java/Kotlin/Swift/Dart/Lua/PHP/Ruby 各跑 self-test，外加 lint（flake8 + eslint）。各门禁命令与上表「门禁命令」列一致。
+> CI 矩阵（`.github/workflows/ci.yml`）已扩到 **15 语言矩阵 = 14 语言 job + lint**：Python(3.9-3.12)/JS(Node18/20/22)/Go/Rust/C/C++/C#/Java/Kotlin/Swift/Dart/Lua/PHP/Ruby 各跑 self-test，外加 lint（flake8 + eslint）。各门禁命令与上表「门禁命令」列一致。**TD-14（2026-08-26）矩阵已全绿**：PR #1 run 32996637784 全部 job conclusion=success。
 
 ---
 
@@ -253,6 +254,7 @@ val id  = resolveIdentityDidDns("alice.kirinnet.org")       // DidDnsIdentity?
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v2.2 | 2026-08-27 | TD-14：CI 15 语言矩阵首次全绿（PR #1，run 32996637784，2026-08-26 实跑，20/20 job success）——Tested 表 11 门语言由「🟡 代码就绪·待实机」升「✅ 已测（CI 实机）」并注明 GitHub Actions ubuntu-latest；档位定义增 CI 实机档；「待实机」档清零 |
 | v2.1 | 2026-08-09 | P-SDK 同步 X-QA 验收遗留（D07·9.5·波1 合并前小修）：Tested 三档重定义为「已测（真机）/代码就绪·待实机/待迁移（占位）」；Python 计数 29p→**52 passed/9 skipped**；JavaScript/Rust 标为已测（43 passed / 27+2）；C#/Java/Kotlin 由「🔴 待迁移」改为「🟡 代码就绪·待实机」（D07 已重写为 did:dns + SRV 新基线）；CI 说明「11 语言无 CI」→「15 语言矩阵 = 14 语言 job + lint」；API 对照表/Quick Start/目录结构注释补三门 v2 导出符号与基线状态 |
 | v2.0 | 2026-08-08 | P-SDK 重写：对齐 ADRP v2.0（SRV+TXT 双层）；API 表逐语言对照真实导出符号；Quick Start 改 v2 主 API；Tested 三档（已测/已迁移待补测/待迁移）；标注 C#/Java/Kotlin 波1重写、Go 假绿 |
 | v1.0 | （历史） | 旧 v1 口径：`resolve_kirin_dns(domain)→{http,https,ws,wss}` TXT-JSON 端口（**已过时**） |
