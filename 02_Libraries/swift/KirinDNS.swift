@@ -235,8 +235,11 @@ private func sha256(_ data: [UInt8]) -> [UInt8] {
     for off in stride(from: 0, to: msg.count, by: 64) {
         var m = [UInt32](repeating: 0, count: 64)
         for i in 0..<16 {
-            m[i] = (UInt32(msg[off+i*4])<<24)|(UInt32(msg[off+i*4+1])<<16)|
-                   (UInt32(msg[off+i*4+2])<<8)|UInt32(msg[off+i*4+3])
+            let b0 = UInt32(msg[off + i*4])
+            let b1 = UInt32(msg[off + i*4 + 1])
+            let b2 = UInt32(msg[off + i*4 + 2])
+            let b3 = UInt32(msg[off + i*4 + 3])
+            m[i] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
         }
         for i in 16..<64 {
             let s0 = rotr(m[i-15],7) ^ rotr(m[i-15],18) ^ (m[i-15] >> 3)
