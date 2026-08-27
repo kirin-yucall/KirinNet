@@ -189,7 +189,7 @@ c = <nonce>:<timestamp>:<hmac>
 1. **挑战码明文 `c`**（`nonce:timestamp:hmac` 整体）—— 防篡改 + 防重放。
 2. **校验方域名**（请求来源）—— 防跨域重放。
 3. **受验方域名**（身份声明主体）—— 绑定 `did:dns:v=1`。
-4. **泛洪 `forward_chain`（转发链）**—— P-FLOOD T1 草案字段（防转发链篡改/注入）。
+4. **泛洪 `forward_chain`（转发链）**—— P-FLOOD T1 草案字段（防转发链篡改/注入）。（多跳泛洪语境下验签输入取 `forward_chain` 签发前缀 `[src_domain]`——见 T1 §5.3，KNET-CC-015。）
 5. **T3 权重字段**（`trust_weight`, int8 -127~100）—— P-FLOOD T3 草案字段（防权重篡改）。
 
 **MUST NOT 覆盖**：传输层元数据（HTTP 头、TLS 证书、IP 地址）—— 由传输层（HTTPS/TLS）保证。
