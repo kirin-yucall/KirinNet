@@ -3,6 +3,7 @@
 > **Version:** 1.0
 > **Status:** Draft
 > **Scope:** DNS TXT 记录格式定义、自动域名登录验证流程、解密端点 API 规范、AI 智能体身份模型、HPKE 传输加密
+> **注：** v1.3 修订（§2.4 记录位置）为 KNET-CC-016 草案·待会签，未会签单边定稿无效（版本行沿用文件既有口径，最新版本见 §10 变更记录）。
 
 ---
 
@@ -34,7 +35,7 @@
 | `did:dns:pk;...` | 公钥 | 是 |
 | `did:dns:black;...` | 黑名单 | 否 |
 
-同一域名下可有多条 TXT 记录，解析时按前缀分类提取。
+同一域名下可有多条 TXT 记录，解析时按前缀分类提取。（三类记录发布的 DNS 名位置〔owner 名〕见 §2.4。）
 
 ### 2.1 身份声明记录（必选）
 
@@ -89,6 +90,35 @@ did:dns:black;fp=<指纹1>,<指纹2>,...
 ```
 
 列出已撤销的旧公钥指纹，逗号分隔。一旦私钥泄露或更新密钥，旧指纹应立即加入此记录。
+
+### 2.4 记录位置：TXT owner 名（KNET-CC-016 草案·待会签，未会签单边定稿无效）
+
+> **状态：草案（KNET-CC-016，2026-08-28 P-ARCH 视角起草，待节点 PM 会签；未会签单边定稿无效）。**
+> **背景：** 波 2 契约一致性对照表 CC-3 新发现缺口——协议全集此前未定义 did:dns TXT 的 DNS 名位置（本 §2 仅述「同一域名下可有多条 TXT 记录」，示例均画在域名 apex），节点侧已落地 `_kirinnet.did.<域名>` 前缀名（发布 `dns.js` DID 分支 / 查询 `dns.js`·`cards.js`）；纯 apex 客户端发现不了节点发布的记录。本节为该缺口的协议侧补定义。
+
+**规范位置（normative）：** 三类 did:dns TXT 记录（v / pk / black）的 owner 名为：
+
+```
+_kirinnet.did.<域名>.
+```
+
+即发布在域名 `<域名>` 的专属子域 `_kirinnet.did` 名下（同一 owner 名承载全部三类记录；`_kirinnet-*` 命名空间先例见 `dns_automation.md` §10）。示例（`mydomain.example`）：
+
+```
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:black;fp=OldKeyFp1,OldKeyFp2"
+```
+
+**选择理由：** ① 与域名 apex 的存量 TXT 记录（SPF / DKIM / DMARC 等）物理隔离，避免与邮件/Web 记录叠放在同一 owner（`compatibility.md` §3 前缀分类共存规则的自然延伸——分类规则不变，隔离降低误读与冲突面）；② 三类记录整组归属一个 owner 名，发布、轮换、清理为一组操作，多记录管理清晰；③ 节点侧发布实现已按此落地（`dns.js` DID 发布分支 owner=`_kirinnet.did.<域名>`），规范追认事实标准。
+
+**查询侧兼容回退（RECOMMENDED）：** 解析方 SHOULD 先查询 `_kirinnet.did.<域名>` 的 TXT 记录；若该名 NXDOMAIN 或应答中无任何 `did:dns:` 前缀记录，SHOULD 回退查询 `<域名>`（apex）TXT 并按本节前缀分类规则提取（兼容存量部署与其他实现；apex 处的 SPF/DKIM/DMARC 记录按 §6 共存规则忽略）。两处查询均 MUST 走 DoH/DoT 加密传输（`spec_v1.md` §4.3，禁明文 53）。
+
+**发布侧（MAY）：** 发布方 MAY 同时在 apex 发布同一组记录（双发），提升对仅查 apex 的旧客户端的可见性；规范位置仍是 `_kirinnet.did.<域名>`，双发不改变 §2.4 查询优先序，两组记录内容 MUST 一致。
+
+**SRV 记录不受影响：** 本节仅涉及 TXT 身份记录的位置；SRV 记录（`_kirinnet-*._tcp/_udp.<域名>`）仍按 `spec_v1.md` §3.1 / `dns_automation.md` §2 定义发布在服务名 owner 下，owner 名不变。
+
+**fail-closed：** 前缀名与 apex 两处均无 `did:dns:` 记录时，视为该域名未部署 DID-DNS 身份：§3 验证流程不启动（跳过身份验证 / 降级告警，null identity，与 `compatibility.md` §1/§6 行为一致），MUST NOT 猜测其他位置、MUST NOT 以明文 53 查询兜底、MUST NOT 采信 TTL 缓存之外的陈旧记录。
 
 ---
 
@@ -301,13 +331,14 @@ function verifyChallenge(challenge, response, domain, secret) {
 
 ## 6. 与现有 DNS 记录的共存
 
-同一域名下，`did:dns:` 记录与 SRV 记录共存：
+同一域名下，`did:dns:` 记录与 SRV 记录共存（TXT owner 名位置见 §2.4——KNET-CC-016 草案，身份记录规范位置为 `_kirinnet.did.<域名>`，apex 双发 MAY 可选）：
 
 ```
-; 身份声明 — 用于节点发现和第三方登录
-mydomain.example.  300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
-mydomain.example.  300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
-mydomain.example.  300  IN  TXT  "did:dns:black;fp=OldKeyFp1,OldKeyFp2"
+; 身份声明 — 用于节点发现和第三方登录（owner = _kirinnet.did.<域名>，§2.4 规范位置）
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
+_kirinnet.did.mydomain.example.  300  IN  TXT  "did:dns:black;fp=OldKeyFp1,OldKeyFp2"
+; （可选 MAY：apex mydomain.example. 双发同一组记录，见 §2.4 发布侧）
 
 ; 服务发现 — 用于节点互连
 _kirinnet-ws._tcp.mydomain.example.    300  IN  SRV  0 0 8082 mydomain.example.
@@ -444,3 +475,4 @@ DID-DNS 提供链下身份层，链上合约可直接引用 — `did:dns:dao.exa
 | 1.0 | 2026-08-08 | 首版（did:dns 身份记录 + 自动验证 + HPKE 解密端点通道；P-DOC 首件④c） | 9.2/9.3 · C-1 · 波0 |
 | 1.1 | 2026-08-08 | **T9 签名质询落 §3.5（草案·待会签）**：§3.5 新增签名质询-应答验证流程（挑战码结构 + 签名覆盖范围 + HPKE 分工，**草案·待 KNET-CC 会签**） | 9.2/9.3 · T9（草案）· KNET-CC-006 · 波0 |
 | 1.2 | 2026-08-09 | **T9 字段名钉死 `trust_weight`（§3.5.2）**：§3.5.2 签名覆盖范围第 5 项信任权重字段 `weight`/`trust_score` → `trust_weight`（int8 -127~100）。与 `DECISIONS.md` §9.3.2/§9.3.4/§9.3.5（P-ARCH d1fd221）及节点 02 篇基线（dns_hosts/contacts/answer.trust_weight）一致。**变更说明：**依据 KNET-CC-011 节点 PM 附条件通过（2026-08-08 23:45）+ d1fd221 字段名钉死（2026-08-09），本修订为条件履约；签名覆盖范围是跨实现强一致契约（JCS 规范化签名，字段名须固定），消除 `weight`/`trust_score` 歧义（`weight` 易与 DNS SRV weight 混淆，`trust_score` 暗示浮点而 T3 明定 int8）。**注：**本节未触及 DNS SRV 记录的 `weight` 字段（SRV 标准 `priority weight port target`，与信任权重无关，按 §6 共存规则保留） | T9 · KNET-CC-011（节点 PM 附条件履约）· d1fd221 · 波0 |
+| 1.3 | 2026-08-28 | **新增 §2.4 记录位置小节（KNET-CC-016 草案·待会签，未会签单边定稿无效）**：定义 did:dns TXT 三记录 owner 名规范位置=`_kirinnet.did.<域名>`（与 apex SPF/DKIM/DMARC 隔离 + 节点侧已落地 + 多记录整组管理）；查询侧兼容回退 RECOMMENDED（前缀名优先，NXDOMAIN/无 did:dns 记录回退 apex，均走 DoH/DoT）；发布侧 apex 双发 MAY；SRV 记录不受影响；两处均无记录 fail-closed（null identity，不猜）。**随附冲突最小修订（既有 apex 示例与新小节直接冲突处）：**§2 首节句末加 §2.4 指向括注（不改原句文字）；§6 共存示例三行 TXT owner `mydomain.example.` → `_kirinnet.did.mydomain.example.` + 双发可选注行。背景：波 2 对照表 CC-3——协议全集零处定义记录位置，纯 apex 客户端发现不了节点发布记录 | KNET-CC-016（草案·待会签）· 波2 对照表 CC-3 · 协议PM 裁定（2026-08-28 10:50）· 波2 |
