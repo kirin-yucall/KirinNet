@@ -226,7 +226,7 @@ did:dns:black;fp=<fingerprint1>,<fingerprint2>,...
   declaration 73B / public key 69B / blacklist 44B).
 - Records MAY appear in any order; the Client classifies them by prefix.
 - Unknown sub-keys within a record are silently ignored by the Client.
-- **Record location (KNET-CC-016 draft, pending countersignature — see
+- **Record location (KNET-CC-016, countersigned & finalized 2026-08-28 — see
   [DID-DNS Protocol §2.4](./did-dns-protocol.md)):** the three identity
   TXT records are owned by the name `_kirinnet.did.<domain>.` (canonical
   location); a Client SHOULD query that name first over DoH/DoT and fall
@@ -332,7 +332,7 @@ resolved IP address and port.
 
 The Client issues a standard DNS TXT query for the target domain using
 an encrypted DNS transport. Per [DID-DNS Protocol §2.4](./did-dns-protocol.md)
-(KNET-CC-016 draft, pending countersignature), the query name is
+(KNET-CC-016, countersigned & finalized 2026-08-28), the query name is
 `_kirinnet.did.<target domain>` (canonical record location); if that name
 returns NXDOMAIN or contains no `did:dns:` records, the Client SHOULD
 fall back to a TXT query on the apex `<target domain>` (compatibility
@@ -539,4 +539,4 @@ remain the IANA-facing registry managed by this specification.
 |---|---|---|---|
 | 2.0 | 2026-07-09 | Initial ADRP v2.0: SRV (RFC 2782) service discovery + TXT identity metadata | — |
 | 2.1 | 2026-08-08 | **C-1 migration (9.2/9.3):** §2.3 / §3.2.1 / §3.2.2 / §3.3.2 migrated to the DID-DNS three-record model (`did:dns:v`/`pk`/`black`) with Ed25519 + fingerprint chain; legacy `id=;key=;nick=;ipfs=` single-record format deprecated. §4.3 strengthened with fail-closed plaintext-DNS handling; §4.2 fail-closed DNSSEC default added; §6.2 references did-dns-protocol.md for the authoritative TXT format. Per `DECISIONS.md` §9.2 (P-ARCH ruling). | C-1 · 9.2 · 9.3 · 波0 |
-| 2.2 | 2026-08-28 | **Record location reference (KNET-CC-016 draft, pending countersignature — unilateral finalization invalid without countersignature):** §3.2.1 Constraints adds one bullet referencing DID-DNS §2.4 — identity TXT records are owned by `_kirinnet.did.<domain>.` (canonical), Client SHOULD query that name first with apex fallback (RECOMMENDED), SRV owner names unaffected; §3.3.2 Step 1 extended with the same query-name semantics (additive sentences, no existing clause text altered). Background: Wave-2 contract-consistency audit finding CC-3 — the protocol set never defined the DNS name location of did:dns TXT records; apex-only clients cannot discover node-published records. | KNET-CC-016 (draft · pending countersignature) · 波2 audit CC-3 · 协议PM ruling (2026-08-28 10:50) · 波2 |
+| 2.2 | 2026-08-28 | **Record location reference (KNET-CC-016, countersigned & finalized — 2026-08-28 node-PM countersign + protocol-PM merge master 4b81db4, jointly closed):** §3.2.1 Constraints adds one bullet referencing DID-DNS §2.4 — identity TXT records are owned by `_kirinnet.did.<domain>.` (canonical), Client SHOULD query that name first with apex fallback (RECOMMENDED), SRV owner names unaffected; §3.3.2 Step 1 extended with the same query-name semantics (additive sentences, no existing clause text altered). Background: Wave-2 contract-consistency audit finding CC-3 — the protocol set never defined the DNS name location of did:dns TXT records; apex-only clients cannot discover node-published records. | KNET-CC-016 (countersigned & closed 2026-08-28, master 4b81db4) · 波2 audit CC-3 · 协议PM ruling (2026-08-28 10:50) · 波2 |

@@ -6,7 +6,7 @@
 > **Scope:** KirinDNS Resolution Protocol (ADRP) 与存量 Web 基础设施的共存边界：HTTP/HTTPS 兼容、SRV/TXT 叠放、端口回退。
 > **依据:** `spec_v1.md` §2.2/§2.5/§3.1/§3.3/§5.2、`dns_automation.md` §1/§2、`did-dns-protocol.md` §6。
 > **裁决:** 甲方裁决纳入阶段一范围（`docs\协作记录.md` §COM-01，2026-08-08）。
-> **注：** v1.1 为 KNET-CC-016 草案修订（§3 叠放规则同步 + 示例 owner 对齐，待会签，未会签单边定稿无效）。
+> **注：** v1.1 为 KNET-CC-016 修订（§3 叠放规则同步 + 示例 owner 对齐；已会签定稿——2026-08-28 节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）。
 
 ---
 
@@ -84,7 +84,7 @@ _kirinnet-ws._tcp.alice.kirinnet.org.    300  IN  SRV  0 0 8082 alice.kirinnet.o
 _kirinnet-http._tcp.alice.kirinnet.org.  300  IN  SRV  0 0 8080 alice.kirinnet.org.
 _kirinnet-https._tcp.alice.kirinnet.org. 300  IN  SRV  0 0 8443 alice.kirinnet.org.
 
-; ===== TXT — 身份验证（ADRP DID-DNS 三记录；owner = _kirinnet.did.<域名>，见 did-dns-protocol §2.4 / KNET-CC-016 草案）=====
+; ===== TXT — 身份验证（ADRP DID-DNS 三记录；owner = _kirinnet.did.<域名>，见 did-dns-protocol §2.4 / KNET-CC-016 定稿）=====
 _kirinnet.did.alice.kirinnet.org.  300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
 _kirinnet.did.alice.kirinnet.org.  300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
 _kirinnet.did.alice.kirinnet.org.  300  IN  TXT  "did:dns:black;fp=OldKeyFp1,OldKeyFp2"
@@ -108,7 +108,7 @@ _dmarc.alice.kirinnet.org.  300  IN  TXT  "v=DMARC1; p=quarantine;"
 
 **关键约束**：ADRP 客户端只识别 `did:dns:` 前缀的记录；非 `did:dns:` 记录静默忽略，不影响存量邮件/Web 系统。反之，存量 SPF/DKIM/DMARC 解析器不识别 `did:dns:` 前缀，按未知 TXT 记录处理，同样不受影响。
 
-> **叠放规则同步（KNET-CC-016 草案·待会签，未会签单边定稿无效）：** 自本草案起，did:dns 身份 TXT 的 owner 名为 `_kirinnet.did.<域名>`（规范位置，`did-dns-protocol.md` §2.4）——与 apex 的 SPF/DKIM/DMARC 等存量 TXT **按 owner 名隔离叠放**，本节前缀分类规则不变（分类作用于所查 owner 名返回的 TXT 集合）；解析方 SHOULD 前缀名优先、无 `did:dns:` 记录时回退 apex（RECOMMENDED），回退查到的 TXT 同按 §3.2 分类表处理；SRV 记录 owner 不受影响。
+> **叠放规则同步（KNET-CC-016 已会签定稿，2026-08-28 节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）：** 自本修订起，did:dns 身份 TXT 的 owner 名为 `_kirinnet.did.<域名>`（规范位置，`did-dns-protocol.md` §2.4）——与 apex 的 SPF/DKIM/DMARC 等存量 TXT **按 owner 名隔离叠放**，本节前缀分类规则不变（分类作用于所查 owner 名返回的 TXT 集合）；解析方 SHOULD 前缀名优先、无 `did:dns:` 记录时回退 apex（RECOMMENDED），回退查到的 TXT 同按 §3.2 分类表处理；SRV 记录 owner 不受影响。
 
 ### 3.3 单条 TXT ≤200 字节
 
@@ -177,4 +177,4 @@ ADRP 强制要求 SRV/TXT 查询走 DoT（RFC 7858）或 DoH（RFC 8484），禁
 | 版本 | 日期 | 变更 | 依据 |
 |---|---|---|---|
 | 1.0 | 2026-08-08 | 首版：存量 Web 兼容边界（HTTP/HTTPS 兼容、SRV/TXT 叠放、端口回退）；从 0 字节空文件填充 | 9.6 · 波0 · 甲方裁决（§COM-01） |
-| 1.1 | 2026-08-28 | **§3 叠放规则同步（KNET-CC-016 草案·待会签，未会签单边定稿无效）**：§3.2 关键约束后新增同步段——did:dns 身份 TXT owner 名=`_kirinnet.did.<域名>`（与 apex SPF/DKIM/DMARC 按 owner 名隔离叠放，前缀分类规则不变；解析前缀名优先、apex 回退 RECOMMENDED；SRV owner 不受影响，权威定义 `did-dns-protocol.md` §2.4）。**冲突最小修订：**§3.1 示例三行身份 TXT owner `alice.kirinnet.org.` → `_kirinnet.did.alice.kirinnet.org.`（+可选双发注行；apex SPF/DMARC 行原样保留）。背景：波 2 对照表 CC-3 | KNET-CC-016（草案·待会签）· 波2 对照表 CC-3 · 协议PM 裁定（2026-08-28 10:50）· 波2 |
+| 1.1 | 2026-08-28 | **§3 叠放规则同步（KNET-CC-016，后经会签定稿闭环：2026-08-28 节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）**：§3.2 关键约束后新增同步段——did:dns 身份 TXT owner 名=`_kirinnet.did.<域名>`（与 apex SPF/DKIM/DMARC 按 owner 名隔离叠放，前缀分类规则不变；解析前缀名优先、apex 回退 RECOMMENDED；SRV owner 不受影响，权威定义 `did-dns-protocol.md` §2.4）。**冲突最小修订：**§3.1 示例三行身份 TXT owner `alice.kirinnet.org.` → `_kirinnet.did.alice.kirinnet.org.`（+可选双发注行；apex SPF/DMARC 行原样保留）。背景：波 2 对照表 CC-3 | KNET-CC-016（已会签定稿·联合关闭 2026-08-28 master 4b81db4）· 波2 对照表 CC-3 · 协议PM 裁定（2026-08-28 10:50）· 波2 |

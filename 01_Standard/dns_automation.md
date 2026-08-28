@@ -3,7 +3,7 @@
 > **Version:** 2.3
 > **Status:** Draft
 > **Scope:** How KirinNet nodes programmatically manage DNS records for service discovery (SRV) and identity/authentication (DID-DNS TXT).
-> **注：** v2.3 为 KNET-CC-016 草案修订（§4.5 + 示例位置对齐，待会签，未会签单边定稿无效）。
+> **注：** v2.3 为 KNET-CC-016 修订（§4.5 + 示例位置对齐；已会签定稿——2026-08-28 节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）。
 
 ---
 
@@ -193,9 +193,9 @@ Same as V1:
 
 **Errors:** Same codes as V1 (`UNAUTHORIZED` 401, `FORBIDDEN` 403, `RATE_LIMITED` 429).
 
-### 4.5 DID TXT Record Owner Name（KNET-CC-016 草案·待会签，未会签单边定稿无效）
+### 4.5 DID TXT Record Owner Name（KNET-CC-016 已会签定稿，2026-08-28 节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）
 
-> **状态：草案（KNET-CC-016，2026-08-28 P-ARCH 视角起草，待节点 PM 会签；未会签单边定稿无效）。** 权威定义见 [DID-DNS Protocol §2.4](./did-dns-protocol.md)，本节为发布侧（DNS Update API / provider dispatch）落位说明。
+> **状态：已会签定稿（KNET-CC-016，2026-08-28 P-ARCH 视角起草；同日节点 PM 会签通过 + 协议 PM 合并 master 4b81db4 联合关闭）。** 权威定义见 [DID-DNS Protocol §2.4](./did-dns-protocol.md)，本节为发布侧（DNS Update API / provider dispatch）落位说明。
 
 The `did_dns_records` payload (identity / public_key / blacklist) is published as a TXT record set on the dedicated owner name:
 
@@ -249,7 +249,7 @@ async function resolveKirinNetNode(domain) {
   const addresses = await dns.resolve4(target);
 
   // 3. Resolve TXT for DID-DNS identity — canonical owner `_kirinnet.did.<domain>`
-  //    first, apex fallback (DID-DNS §2.4, KNET-CC-016 draft)
+  //    first, apex fallback (DID-DNS §2.4, KNET-CC-016 finalized)
   let identity = null;
   try {
     const prefixTxt = await dns.resolveTxt(`_kirinnet.did.${domain}`).catch(() => []);
@@ -478,4 +478,4 @@ KirinNet targets 15 DNS providers with APIs that support automated A/SRV/TXT rec
 | 2.0 | 2026-07-09 | Initial ADRP v2.0: SRV (RFC 2782) + DID-DNS TXT automation | — |
 | 2.1 | 2026-08-01 | DID-DNS three-record model (identity/public-key/blacklist), Ed25519 keys, fingerprint chain | §0 |
 | 2.2 | 2026-08-08 | **C-4 (protocol-side):** Added §9 "Supported DNS Providers (15)" — target registry of 15 providers (Cloudflare reference + 14 targets), filling the X-QA-flagged protocol-side gap. Node-side 12→15 alignment tracks via KNET-CC-003. | C-4 · KNET-CC-003 · 波0 |
-| 2.3 | 2026-08-28 | **DID TXT owner name section (KNET-CC-016 draft, pending countersignature — unilateral finalization invalid without countersignature):** §4.5 new — `did_dns_records` published on `_kirinnet.did.<domain>.` (single owner, provider `update_dns` TXT upsert target), apex dual publish MAY, resolver prefix-first/apex-fallback per DID-DNS §2.4. **Conflict-driven minimal revisions (existing apex examples directly conflicted with §4.5):** §1 record table TXT example owner → `_kirinnet.did.<domain>`; §2.3 zone example TXT owner lines → `_kirinnet.did.alice.kirinnet.org.` (+ optional dual-publish comment); §5.1 flow step 3 query name → prefix name with apex fallback note; §5.2 sample code `resolveTxt(domain)` → prefix-first + apex fallback. Background: Wave-2 audit CC-3 — location undefined in protocol set; node updater already compliant. | KNET-CC-016 (draft · pending countersignature) · 波2 audit CC-3 · 协议PM ruling (2026-08-28 10:50) · 波2 |
+| 2.3 | 2026-08-28 | **DID TXT owner name section (KNET-CC-016, countersigned & finalized — 2026-08-28 node-PM countersign + protocol-PM merge master 4b81db4, jointly closed):** §4.5 new — `did_dns_records` published on `_kirinnet.did.<domain>.` (single owner, provider `update_dns` TXT upsert target), apex dual publish MAY, resolver prefix-first/apex-fallback per DID-DNS §2.4. **Conflict-driven minimal revisions (existing apex examples directly conflicted with §4.5):** §1 record table TXT example owner → `_kirinnet.did.<domain>`; §2.3 zone example TXT owner lines → `_kirinnet.did.alice.kirinnet.org.` (+ optional dual-publish comment); §5.1 flow step 3 query name → prefix name with apex fallback note; §5.2 sample code `resolveTxt(domain)` → prefix-first + apex fallback. Background: Wave-2 audit CC-3 — location undefined in protocol set; node updater already compliant. | KNET-CC-016 (countersigned & closed 2026-08-28, master 4b81db4) · 波2 audit CC-3 · 协议PM ruling (2026-08-28 10:50) · 波2 |
