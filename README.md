@@ -67,12 +67,37 @@ _kirinnet-ws._tcp.mydomain.example.  300 IN SRV 0 0 8082 mydomain.example.
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [`did-dns-protocol.md`](01_Standard/did-dns-protocol.md) | DID-DNS 身份协议（记录格式/自动认证/解密端点/HPKE/AI 智能体身份模型） | ✅ 基线 |
-| [`spec_v1.md`](01_Standard/spec_v1.md) | ADRP 解析协议（SRV 服务发现 + TXT 身份元数据） | ⚠️ 旧格式待对齐 |
+| [`spec_v1.md`](01_Standard/spec_v1.md) | ADRP 解析协议（SRV 服务发现 + TXT 身份元数据） | ✅ 基线（did:dns+Ed25519 已迁移，CC-004） |
 | [`dns_automation.md`](01_Standard/dns_automation.md) | DNS 自动化标准（更新 API 契约、节点更新循环） | ✅ |
-| [`im_protocol.md`](01_Standard/im_protocol.md) | P2P IM 协议（两阶段好友、会话密钥） | ⚠️ 旧品牌/旧密钥 |
-| [`security_model_v1.md`](01_Standard/security_model_v1.md) | 安全威胁模型（三层信任/心跳/分布式入侵检测） | ⚠️ RSA 体系待对齐 |
+| [`im_protocol.md`](01_Standard/im_protocol.md) | P2P IM 协议（两阶段好友、会话密钥） | ✅ 基线（/kirin/* + Ed25519+PFS 已对齐，CC-005/006） |
+| [`security_model_v1.md`](01_Standard/security_model_v1.md) | 安全威胁模型（三层信任/心跳/分布式入侵检测） | ✅ 基线（Ed25519 已统一，CC-002/006） |
 
-> 已知协议不一致问题（密钥体系三套并存、TXT 格式两代等）见 [`DECISIONS.md`](DECISIONS.md) 第 8 节。
+> 早期协议不一致问题（密钥体系、TXT 格式两代）已随 [`DECISIONS.md`](DECISIONS.md) §9 裁决与 KNET-CC-002~006 履约消解（§8 留档）；阶段一全量文件状态见下节「阶段一基线」。
+
+---
+
+## 阶段一基线（2026-08）
+
+**阶段一（适配存量 Web：SRV/TXT 服务发现 + 身份记录 + 内网穿透）协议基线已定版**——`01_Standard/` 14 份契约文件构成基线全集，逐文件版本/会签单/定稿日期清单见 [`01_Standard/BASELINE.md`](01_Standard/BASELINE.md)（派生数据，状态以协作记录 §KNET-CC 台账为准）。
+
+| 文件 | 版本 | 状态 |
+|---|---|---|
+| `spec_v1.md` | v2.0 | ✅ 已会签定稿（CC-004/002/006/013） |
+| `did-dns-protocol.md` | 1.0 | ✅ 已会签定稿（CC-004/011） |
+| `dns_automation.md` | 2.2 | ✅ 已会签定稿（CC-003） |
+| `im_protocol.md` | 1.2 | ✅ 已会签定稿（CC-005/006/011） |
+| `security_model_v1.md` | v1.1 | ✅ 已会签定稿（CC-002/006/011） |
+| `compatibility.md` | 1.0 | ✅ 甲方裁决纳入阶段一（§COM-01 2026-08-08） |
+| `flood_protocol.md` | 0.2 | ✅ 已联合关闭（CC-007 → CC-015，2026-08-28） |
+| `trust_weight.md` | 0.2 | ✅ 已会签定稿（CC-008） |
+| `multi_candidate_resolution.md` | 0.1 | ✅ 已会签定稿（CC-009） |
+| `distributed_dns.md` | 0.1 | ✅ 已会签定稿（CC-001，对齐草案·非完整设计） |
+| `consensus_counter.md` | 0.2 | ✅ 已联合关闭（CC-010，2026-08-09） |
+| `content_push.md` | 0.1 | ✅ 已联合关闭（CC-012，2026-08-24） |
+| `relay_protocol.md` | 0.1 | ✅ 已联合关闭（CC-013，2026-08-26） |
+| `content_query.md` | 0.2 | ✅ 已联合关闭（CC-014，2026-08-27） |
+
+> 2 份 IETF 草案 txt（draft-*-adrp-00/01）不入基线（暂缓 IETF 提交，`DECISIONS.md` §0）。**SDK 现状**：15 语言 CI 实机全绿（run #23）。基线 commit 锚点见 `BASELINE.md` §4（合并后回填）。
 
 ---
 
