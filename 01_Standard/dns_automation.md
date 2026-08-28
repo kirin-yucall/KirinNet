@@ -1,8 +1,9 @@
 # KirinDNS Automation Standard
 
-> **Version:** 2.2
+> **Version:** 2.3
 > **Status:** Draft
 > **Scope:** How KirinNet nodes programmatically manage DNS records for service discovery (SRV) and identity/authentication (DID-DNS TXT).
+> **注：** v2.3 为 KNET-CC-016 草案修订（§4.5 + 示例位置对齐，待会签，未会签单边定稿无效）。
 
 ---
 
@@ -14,7 +15,7 @@ KirinNet nodes publish three DNS record types:
 |--------|---------|---------|
 | **A / AAAA** | IP address of the node | Standard DNS resolution |
 | **SRV** | Service ports (WebSocket, HTTP, HTTPS) | `_kirinnet-ws._tcp.alice.kirinnet.org. 300 IN SRV 0 0 8082 alice.kirinnet.org.` |
-|| **TXT** | Identity & authentication (DID-DNS protocol) | `mydomain.example. 300 IN TXT "did:dns:v=1;fp=...;n=...;iat=...;exp=..."` |
+|| **TXT** | Identity & authentication (DID-DNS protocol) | `_kirinnet.did.mydomain.example. 300 IN TXT "did:dns:v=1;fp=...;n=...;iat=...;exp=..."` (owner name per §4.5 / DID-DNS §2.4) |
 
 Separation of concerns: SRV handles **where** (port), TXT handles **who** (identity), A/AAAA handles **which IP**.
 
@@ -62,9 +63,10 @@ _kirinnet-ws._tcp.alice.kirinnet.org.   300  IN  SRV  0 0 8082 alice.kirinnet.or
 _kirinnet-http._tcp.alice.kirinnet.org. 300  IN  SRV  0 0 8080 alice.kirinnet.org.
 _kirinnet-https._tcp.alice.kirinnet.org. 300  IN  SRV  0 0 8443 alice.kirinnet.org.
 
-; TXT records — identity & authentication (DID-DNS protocol)
-alice.kirinnet.org.      300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
-alice.kirinnet.org.      300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
+; TXT records — identity & authentication (DID-DNS protocol; owner = _kirinnet.did.<domain>, see §4.5)
+_kirinnet.did.alice.kirinnet.org.  300  IN  TXT  "did:dns:v=1;fp=AbCdEf1234aaaa;n=QWxpY2U;g=F;iat=1712345678;exp=1712432078"
+_kirinnet.did.alice.kirinnet.org.  300  IN  TXT  "did:dns:pk;kty=ed25519;pk=MCowBQYDK2VwAyEA..."
+; (optional MAY: apex alice.kirinnet.org. dual publish, see §4.5)
 ```
 
 ---
@@ -191,6 +193,21 @@ Same as V1:
 
 **Errors:** Same codes as V1 (`UNAUTHORIZED` 401, `FORBIDDEN` 403, `RATE_LIMITED` 429).
 
+### 4.5 DID TXT Record Owner Name（KNET-CC-016 草案·待会签，未会签单边定稿无效）
+
+> **状态：草案（KNET-CC-016，2026-08-28 P-ARCH 视角起草，待节点 PM 会签；未会签单边定稿无效）。** 权威定义见 [DID-DNS Protocol §2.4](./did-dns-protocol.md)，本节为发布侧（DNS Update API / provider dispatch）落位说明。
+
+The `did_dns_records` payload (identity / public_key / blacklist) is published as a TXT record set on the dedicated owner name:
+
+```
+_kirinnet.did.<domain>.
+```
+
+- The provider integration (`update_dns` TXT upsert) MUST write the three `did:dns:` TXT values under this single owner name (`zone: <domain>`, `name: _kirinnet.did.<domain>`, `type: TXT`), not on the apex — SRV records (`§2`) and A/AAAA keep their own owners unchanged.
+- The publisher MAY additionally mirror the same three values on the apex `<domain>.` (dual publish, optional; content MUST be identical) — see DID-DNS §2.4.
+- Resolvers follow DID-DNS §2.4: query `_kirinnet.did.<domain>` first, fall back to apex TXT (RECOMMENDED); both over DoH/DoT.
+- Background: Wave-2 contract-consistency audit finding CC-3 — the protocol set never defined the DNS name location of did:dns TXT records; the node-side updater already writes `_kirinnet.did.<domain>` (compliant with this section).
+
 ---
 
 ## 5. DNS Resolution (Client Side)
@@ -206,7 +223,8 @@ Client wants to connect to alice.kirinnet.org
   ├─ 2. Query A/AAAA alice.kirinnet.org (if not cached)
   │     → get IP address
   │
-  ├─ 3. Query TXT alice.kirinnet.org (for identity)
+  ├─ 3. Query TXT _kirinnet.did.alice.kirinnet.org (for identity; canonical
+  │     owner per DID-DNS §2.4 — fall back to apex TXT if no did:dns: records)
   │     → get DID-DNS identity + public key + blacklist
   │
   └─ 4. Connect WebSocket to <IP>:<SRV port>
@@ -230,10 +248,12 @@ async function resolveKirinNetNode(domain) {
   // 2. Resolve A/AAAA
   const addresses = await dns.resolve4(target);
 
-  // 3. Resolve TXT for DID-DNS identity
+  // 3. Resolve TXT for DID-DNS identity — canonical owner `_kirinnet.did.<domain>`
+  //    first, apex fallback (DID-DNS §2.4, KNET-CC-016 draft)
   let identity = null;
   try {
-    const txtRecords = await dns.resolveTxt(domain);
+    const prefixTxt = await dns.resolveTxt(`_kirinnet.did.${domain}`).catch(() => []);
+    const txtRecords = prefixTxt.length ? prefixTxt : await dns.resolveTxt(domain);
     if (txtRecords.length > 0) {
       const allText = txtRecords.map(r => r.join('')).join('\n');
       identity = parseDidDnsRecords(allText);
@@ -458,3 +478,4 @@ KirinNet targets 15 DNS providers with APIs that support automated A/SRV/TXT rec
 | 2.0 | 2026-07-09 | Initial ADRP v2.0: SRV (RFC 2782) + DID-DNS TXT automation | — |
 | 2.1 | 2026-08-01 | DID-DNS three-record model (identity/public-key/blacklist), Ed25519 keys, fingerprint chain | §0 |
 | 2.2 | 2026-08-08 | **C-4 (protocol-side):** Added §9 "Supported DNS Providers (15)" — target registry of 15 providers (Cloudflare reference + 14 targets), filling the X-QA-flagged protocol-side gap. Node-side 12→15 alignment tracks via KNET-CC-003. | C-4 · KNET-CC-003 · 波0 |
+| 2.3 | 2026-08-28 | **DID TXT owner name section (KNET-CC-016 draft, pending countersignature — unilateral finalization invalid without countersignature):** §4.5 new — `did_dns_records` published on `_kirinnet.did.<domain>.` (single owner, provider `update_dns` TXT upsert target), apex dual publish MAY, resolver prefix-first/apex-fallback per DID-DNS §2.4. **Conflict-driven minimal revisions (existing apex examples directly conflicted with §4.5):** §1 record table TXT example owner → `_kirinnet.did.<domain>`; §2.3 zone example TXT owner lines → `_kirinnet.did.alice.kirinnet.org.` (+ optional dual-publish comment); §5.1 flow step 3 query name → prefix name with apex fallback note; §5.2 sample code `resolveTxt(domain)` → prefix-first + apex fallback. Background: Wave-2 audit CC-3 — location undefined in protocol set; node updater already compliant. | KNET-CC-016 (draft · pending countersignature) · 波2 audit CC-3 · 协议PM ruling (2026-08-28 10:50) · 波2 |
