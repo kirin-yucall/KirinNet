@@ -1,8 +1,8 @@
 # KirinNet P2P Instant Messaging Protocol
 
-**Version:** 1.2
-**Status:** Draft
-**Date:** 2026-08-08
+**Version:** 1.4
+**Status:** Draft（KNET-CC-019 §3.1 取键位置对齐为**修订草案·待会签，未会签单边定稿无效**；§7.4 独立已会签定稿（KNET-CC-011））
+**Date:** 2026-08-29
 
 ---
 
@@ -33,7 +33,9 @@ providing per-session Perfect Forward Secrecy (PFS) in v1.
 
 - Generated on first startup (or loaded from storage)
 - Used to verify identity during friend requests
-- Published in `/kirin/profile` as `identity_key`
+- Published via the did:dns `pk` TXT record (`did-dns-protocol.md` §2, record
+  format §2.2 `did:dns:pk;kty=ed25519;pk=...`; record location §2.4: canonical
+  owner name `_kirinnet.did.<domain>`, query-side apex fallback RECOMMENDED)
 
 ### 3.2. Session Key (Friendship Key) — PFS in v1
 
@@ -329,6 +331,7 @@ nodes uses a signature challenge-response flow (T9):
 > **KirinNet IM Protocol** — Domain-based P2P messaging with Ed25519
 > signatures, HPKE encryption, and Perfect Forward Secrecy (PFS) in v1.
 > Built on [KirinDNS](spec_v1.md) for seamless node discovery.
+> 修订草案·待会签（KNET-CC-019 §3.1 取键位置对齐，2026-08-29）：未会签单边定稿无效；文件整体 Draft，§7.4 独立已会签定稿（KNET-CC-011）。
 
 ---
 
@@ -340,3 +343,4 @@ nodes uses a signature challenge-response flow (T9):
 | 1.1 | 2026-08-08 | **C-2（9.4）端点品牌迁移**：全文 10 处旧端点前缀 → `/kirin/*`（friend/profile/message/messages/block）；门禁品牌残留巡检零命中 | 9.4 · C-2 · 波0 |
 | 1.2 | 2026-08-08 | **9.1 统一 Ed25519 + PFS 纳入 v1 + T9 签名覆盖（草案）**：§1/§2 密钥 RSA→Ed25519（32 字节）；§3.2/§3.3 session key 改 X25519 ECDH + HPKE + PFS；§4/§5 body 公钥格式与加密改 Ed25519/HPKE + 签名；§7.1/§7.2 威胁表 Ed25519+HPKE；§7.3 PFS/签名从「无」改为「v1 已纳入」；§7.4 新增 T9 签名质询覆盖范围（**草案·待 KNET-CC 会签**） | 9.1 · T9（草案）· KNET-CC-005/006 · 波0 |
 | 1.3 | 2026-08-09 | **T9 字段名钉死 `trust_weight`（§7.4）**：§7.4 签名覆盖范围第 5 项信任权重字段 `weight`/`trust_score` → `trust_weight`（int8 -127~100）；P-FLOOD 引用说明 `weight` → `trust_weight`。与 `DECISIONS.md` §9.3.2/§9.3.4/§9.3.5（P-ARCH d1fd221）及节点 02 篇基线一致。**变更说明：**依据 KNET-CC-011 节点 PM 附条件通过（2026-08-08 23:45）+ d1fd221 字段名钉死（2026-08-09），本修订为条件履约；签名覆盖范围是跨实现强一致契约（JCS 规范化签名，字段名须固定），消除 `weight`/`trust_score` 歧义 | T9 · KNET-CC-011（节点 PM 附条件履约）· d1fd221 · 波0 |
+| 1.4 | 2026-08-29 | **§3.1 长期公钥取键位置对齐（KNET-CC-019 修订草案·待会签，未会签单边定稿无效）**：§3.1 发布位「Published in `/kirin/profile` as `identity_key`」→「Published via the did:dns `pk` TXT record（`did-dns-protocol.md` §2/§2.2；记录位置 §2.4 规范 owner 名 `_kirinnet.did.<domain>`，查询侧 apex 回退 RECOMMENDED）」——与节点取键实况对齐（节点 `api.md` §3 术语锚定：`identity_key` 不由 `/kirin/profile` 端点返回，v1 经 did:dns `pk` 记录发布）及 did-dns §2.4（KNET-CC-016 已会签定稿）；§4 同步核结论：无 `/kirin/profile` 取键引用（identity_key 于 request/accept body 中作为键值本身出现），零改动。**残留（界外·未动，列会签对齐点）：**§2 Identity 第 3 条与 §7.1 第 2 项仍带旧 `/kirin/profile` 措辞。头部 Version 1.2→1.4（变更记录此前已含 1.3 行、头部版本滞后，一并校正）+Date+Status 状态戳、页脚草案戳；§3.1 目标句之外条款文字零改动 | KNET-CC-019（波2 对照表 CC-4 残留）· did-dns-protocol §2/§2.4（KNET-CC-016 已会签定稿）· 节点 api.md §3（CC-4 术语锚定）· 波2 |
