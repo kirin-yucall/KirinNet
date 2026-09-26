@@ -252,7 +252,8 @@ jobs:
       - name: Lint Python (flake8)
         working-directory: 02_Libraries/python
         run: |
-          pip install flake8
+          # Debian 12+ (gitea199 runner) enforces PEP 668 externally-managed-environment
+          pip install --break-system-packages flake8
           flake8 . --max-line-length=120 --ignore=E501,W503
 
       - name: Lint JavaScript (eslint)
