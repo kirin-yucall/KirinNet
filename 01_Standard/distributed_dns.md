@@ -189,8 +189,8 @@ dns_hosts 字段（`domain`/`record_type`/`content`/`trust_weight`/`source`/`ttl
 | 引用 | 内容 |
 |---|---|
 | **T1** | query/answer/announce 包承载（信封 + forward_chain + TTL/fanout），引用 T1 草案 |
-| **T3** | dns_hosts/contacts 字段 + trust_weight 取值与 min 聚合 + -127 黑名单，引用 T3 草案 |
-| **T4** | 多候选 schema + 排序键 `(trust_weight DESC, hops ASC, TTL DESC)`，引用 T4 草案 |
+| **T3** | dns_hosts/contacts 字段 + trust_weight 取值与 min 聚合 + -127 黑名单，**引用 T3·已会签定稿（KNET-CC-008，2026-08-08）** |
+| **T4** | 多候选 schema + 排序键 `(trust_weight DESC, hops ASC, TTL DESC)`，**引用 T4·已会签定稿（KNET-CC-009，2026-08-08）** |
 | **T8** | 引导期计数（域名发布防投毒）→ 开关 OFF 后分布式 DNS 由 T3 信任接管；切换点共管 |
 | **T9** | query/answer/announce 包签名覆盖（forward_chain + 权重字段），引用 T9 草案 |
 
